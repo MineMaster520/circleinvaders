@@ -12798,4164 +12798,6 @@ cr.system_object.prototype.loadFromJSON = function (o)
 cr.shaders = {};
 ;
 ;
-cr.plugins_.Arr = function(runtime)
-{
-	this.runtime = runtime;
-};
-(function ()
-{
-	var pluginProto = cr.plugins_.Arr.prototype;
-	pluginProto.Type = function(plugin)
-	{
-		this.plugin = plugin;
-		this.runtime = plugin.runtime;
-	};
-	var typeProto = pluginProto.Type.prototype;
-	typeProto.onCreate = function()
-	{
-	};
-	pluginProto.Instance = function(type)
-	{
-		this.type = type;
-		this.runtime = type.runtime;
-	};
-	var instanceProto = pluginProto.Instance.prototype;
-	var arrCache = [];
-	function allocArray()
-	{
-		if (arrCache.length)
-			return arrCache.pop();
-		else
-			return [];
-	};
-	if (!Array.isArray)
-	{
-		Array.isArray = function (vArg) {
-			return Object.prototype.toString.call(vArg) === "[object Array]";
-		};
-	}
-	function freeArray(a)
-	{
-		var i, len;
-		for (i = 0, len = a.length; i < len; i++)
-		{
-			if (Array.isArray(a[i]))
-				freeArray(a[i]);
-		}
-		a.length = 0;
-		arrCache.push(a);
-	};
-	instanceProto.onCreate = function()
-	{
-		this.cx = this.properties[0];
-		this.cy = this.properties[1];
-		this.cz = this.properties[2];
-		if (!this.recycled)
-			this.arr = allocArray();
-		var a = this.arr;
-		a.length = this.cx;
-		var x, y, z;
-		for (x = 0; x < this.cx; x++)
-		{
-			if (!a[x])
-				a[x] = allocArray();
-			a[x].length = this.cy;
-			for (y = 0; y < this.cy; y++)
-			{
-				if (!a[x][y])
-					a[x][y] = allocArray();
-				a[x][y].length = this.cz;
-				for (z = 0; z < this.cz; z++)
-					a[x][y][z] = 0;
-			}
-		}
-		this.forX = 0;
-		this.forY = 0;
-		this.forZ = 0;
-	};
-	instanceProto.onDestroy = function ()
-	{
-		var x;
-		for (x = 0; x < this.cx; x++)
-			freeArray(this.arr[x]);		// will recurse down and recycle other arrays
-		this.arr.length = 0;
-	};
-	instanceProto.at = function (x, y, z)
-	{
-		x = Math.floor(x);
-		y = Math.floor(y);
-		z = Math.floor(z);
-		if (isNaN(x) || x < 0 || x > this.cx - 1)
-			return 0;
-		if (isNaN(y) || y < 0 || y > this.cy - 1)
-			return 0;
-		if (isNaN(z) || z < 0 || z > this.cz - 1)
-			return 0;
-		return this.arr[x][y][z];
-	};
-	instanceProto.set = function (x, y, z, val)
-	{
-		x = Math.floor(x);
-		y = Math.floor(y);
-		z = Math.floor(z);
-		if (isNaN(x) || x < 0 || x > this.cx - 1)
-			return;
-		if (isNaN(y) || y < 0 || y > this.cy - 1)
-			return;
-		if (isNaN(z) || z < 0 || z > this.cz - 1)
-			return;
-		this.arr[x][y][z] = val;
-	};
-	instanceProto.getAsJSON = function ()
-	{
-		return JSON.stringify({
-			"c2array": true,
-			"size": [this.cx, this.cy, this.cz],
-			"data": this.arr
-		});
-	};
-	instanceProto.saveToJSON = function ()
-	{
-		return {
-			"size": [this.cx, this.cy, this.cz],
-			"data": this.arr
-		};
-	};
-	instanceProto.loadFromJSON = function (o)
-	{
-		var sz = o["size"];
-		this.cx = sz[0];
-		this.cy = sz[1];
-		this.cz = sz[2];
-		this.arr = o["data"];
-	};
-	instanceProto.setSize = function (w, h, d)
-	{
-		if (w < 0) w = 0;
-		if (h < 0) h = 0;
-		if (d < 0) d = 0;
-		if (this.cx === w && this.cy === h && this.cz === d)
-			return;		// no change
-		this.cx = w;
-		this.cy = h;
-		this.cz = d;
-		var x, y, z;
-		var a = this.arr;
-		a.length = w;
-		for (x = 0; x < this.cx; x++)
-		{
-			if (cr.is_undefined(a[x]))
-				a[x] = allocArray();
-			a[x].length = h;
-			for (y = 0; y < this.cy; y++)
-			{
-				if (cr.is_undefined(a[x][y]))
-					a[x][y] = allocArray();
-				a[x][y].length = d;
-				for (z = 0; z < this.cz; z++)
-				{
-					if (cr.is_undefined(a[x][y][z]))
-						a[x][y][z] = 0;
-				}
-			}
-		}
-	};
-	function Cnds() {};
-	Cnds.prototype.CompareX = function (x, cmp, val)
-	{
-		return cr.do_cmp(this.at(x, 0, 0), cmp, val);
-	};
-	Cnds.prototype.CompareXY = function (x, y, cmp, val)
-	{
-		return cr.do_cmp(this.at(x, y, 0), cmp, val);
-	};
-	Cnds.prototype.CompareXYZ = function (x, y, z, cmp, val)
-	{
-		return cr.do_cmp(this.at(x, y, z), cmp, val);
-	};
-	instanceProto.doForEachTrigger = function (current_event)
-	{
-		this.runtime.pushCopySol(current_event.solModifiers);
-		current_event.retrigger();
-		this.runtime.popSol(current_event.solModifiers);
-	};
-	Cnds.prototype.ArrForEach = function (dims)
-	{
-        var current_event = this.runtime.getCurrentEventStack().current_event;
-		this.forX = 0;
-		this.forY = 0;
-		this.forZ = 0;
-		switch (dims) {
-		case 0:
-			for (this.forX = 0; this.forX < this.cx; this.forX++)
-			{
-				for (this.forY = 0; this.forY < this.cy; this.forY++)
-				{
-					for (this.forZ = 0; this.forZ < this.cz; this.forZ++)
-					{
-						this.doForEachTrigger(current_event);
-					}
-				}
-			}
-			break;
-		case 1:
-			for (this.forX = 0; this.forX < this.cx; this.forX++)
-			{
-				for (this.forY = 0; this.forY < this.cy; this.forY++)
-				{
-					this.doForEachTrigger(current_event);
-				}
-			}
-			break;
-		case 2:
-			for (this.forX = 0; this.forX < this.cx; this.forX++)
-			{
-				this.doForEachTrigger(current_event);
-			}
-			break;
-		}
-		this.forX = 0;
-		this.forY = 0;
-		this.forZ = 0;
-		return false;
-	};
-	Cnds.prototype.CompareCurrent = function (cmp, val)
-	{
-		return cr.do_cmp(this.at(this.forX, this.forY, this.forZ), cmp, val);
-	};
-	Cnds.prototype.Contains = function(val)
-	{
-		var x, y, z;
-		for (x = 0; x < this.cx; x++)
-		{
-			for (y = 0; y < this.cy; y++)
-			{
-				for (z = 0; z < this.cz; z++)
-				{
-					if (this.arr[x][y][z] === val)
-						return true;
-				}
-			}
-		}
-		return false;
-	};
-	Cnds.prototype.IsEmpty = function ()
-	{
-		return this.cx === 0 || this.cy === 0 || this.cz === 0;
-	};
-	Cnds.prototype.CompareSize = function (axis, cmp, value)
-	{
-		var s = 0;
-		switch (axis) {
-		case 0:
-			s = this.cx;
-			break;
-		case 1:
-			s = this.cy;
-			break;
-		case 2:
-			s = this.cz;
-			break;
-		}
-		return cr.do_cmp(s, cmp, value);
-	};
-	pluginProto.cnds = new Cnds();
-	function Acts() {};
-	Acts.prototype.Clear = function ()
-	{
-		var x, y, z;
-		for (x = 0; x < this.cx; x++)
-			for (y = 0; y < this.cy; y++)
-				for (z = 0; z < this.cz; z++)
-					this.arr[x][y][z] = 0;
-	};
-	Acts.prototype.SetSize = function (w, h, d)
-	{
-		this.setSize(w, h, d);
-	};
-	Acts.prototype.SetX = function (x, val)
-	{
-		this.set(x, 0, 0, val);
-	};
-	Acts.prototype.SetXY = function (x, y, val)
-	{
-		this.set(x, y, 0, val);
-	};
-	Acts.prototype.SetXYZ = function (x, y, z, val)
-	{
-		this.set(x, y, z, val);
-	};
-	Acts.prototype.Push = function (where, value, axis)
-	{
-		var x = 0, y = 0, z = 0;
-		var a = this.arr;
-		switch (axis) {
-		case 0:	// X axis
-			if (where === 0)	// back
-			{
-				x = a.length;
-				a.push(allocArray());
-			}
-			else				// front
-			{
-				x = 0;
-				a.unshift(allocArray());
-			}
-			a[x].length = this.cy;
-			for ( ; y < this.cy; y++)
-			{
-				a[x][y] = allocArray();
-				a[x][y].length = this.cz;
-				for (z = 0; z < this.cz; z++)
-					a[x][y][z] = value;
-			}
-			this.cx++;
-			break;
-		case 1: // Y axis
-			for ( ; x < this.cx; x++)
-			{
-				if (where === 0)	// back
-				{
-					y = a[x].length;
-					a[x].push(allocArray());
-				}
-				else				// front
-				{
-					y = 0;
-					a[x].unshift(allocArray());
-				}
-				a[x][y].length = this.cz;
-				for (z = 0; z < this.cz; z++)
-					a[x][y][z] = value;
-			}
-			this.cy++;
-			break;
-		case 2:	// Z axis
-			for ( ; x < this.cx; x++)
-			{
-				for (y = 0; y < this.cy; y++)
-				{
-					if (where === 0)	// back
-					{
-						a[x][y].push(value);
-					}
-					else				// front
-					{
-						a[x][y].unshift(value);
-					}
-				}
-			}
-			this.cz++;
-			break;
-		}
-	};
-	Acts.prototype.Pop = function (where, axis)
-	{
-		var x = 0, y = 0, z = 0;
-		var a = this.arr;
-		switch (axis) {
-		case 0:	// X axis
-			if (this.cx === 0)
-				break;
-			if (where === 0)	// back
-			{
-				freeArray(a.pop());
-			}
-			else				// front
-			{
-				freeArray(a.shift());
-			}
-			this.cx--;
-			break;
-		case 1: // Y axis
-			if (this.cy === 0)
-				break;
-			for ( ; x < this.cx; x++)
-			{
-				if (where === 0)	// back
-				{
-					freeArray(a[x].pop());
-				}
-				else				// front
-				{
-					freeArray(a[x].shift());
-				}
-			}
-			this.cy--;
-			break;
-		case 2:	// Z axis
-			if (this.cz === 0)
-				break;
-			for ( ; x < this.cx; x++)
-			{
-				for (y = 0; y < this.cy; y++)
-				{
-					if (where === 0)	// back
-					{
-						a[x][y].pop();
-					}
-					else				// front
-					{
-						a[x][y].shift();
-					}
-				}
-			}
-			this.cz--;
-			break;
-		}
-	};
-	Acts.prototype.Reverse = function (axis)
-	{
-		var x = 0, y = 0, z = 0;
-		var a = this.arr;
-		if (this.cx === 0 || this.cy === 0 || this.cz === 0)
-			return;		// no point reversing empty array
-		switch (axis) {
-		case 0:	// X axis
-			a.reverse();
-			break;
-		case 1: // Y axis
-			for ( ; x < this.cx; x++)
-				a[x].reverse();
-			break;
-		case 2:	// Z axis
-			for ( ; x < this.cx; x++)
-				for (y = 0; y < this.cy; y++)
-					a[x][y].reverse();
-			this.cz--;
-			break;
-		}
-	};
-	function compareValues(va, vb)
-	{
-		if (cr.is_number(va) && cr.is_number(vb))
-			return va - vb;
-		else
-		{
-			var sa = "" + va;
-			var sb = "" + vb;
-			if (sa < sb)
-				return -1;
-			else if (sa > sb)
-				return 1;
-			else
-				return 0;
-		}
-	}
-	Acts.prototype.Sort = function (axis)
-	{
-		var x = 0, y = 0, z = 0;
-		var a = this.arr;
-		if (this.cx === 0 || this.cy === 0 || this.cz === 0)
-			return;		// no point sorting empty array
-		switch (axis) {
-		case 0:	// X axis
-			a.sort(function (a, b) {
-				return compareValues(a[0][0], b[0][0]);
-			});
-			break;
-		case 1: // Y axis
-			for ( ; x < this.cx; x++)
-			{
-				a[x].sort(function (a, b) {
-					return compareValues(a[0], b[0]);
-				});
-			}
-			break;
-		case 2:	// Z axis
-			for ( ; x < this.cx; x++)
-			{
-				for (y = 0; y < this.cy; y++)
-				{
-					a[x][y].sort(compareValues);
-				}
-			}
-			break;
-		}
-	};
-	Acts.prototype.Delete = function (index, axis)
-	{
-		var x = 0, y = 0, z = 0;
-		index = Math.floor(index);
-		var a = this.arr;
-		if (index < 0)
-			return;
-		switch (axis) {
-		case 0:	// X axis
-			if (index >= this.cx)
-				break;
-			freeArray(a[index]);
-			a.splice(index, 1);
-			this.cx--;
-			break;
-		case 1: // Y axis
-			if (index >= this.cy)
-				break;
-			for ( ; x < this.cx; x++)
-			{
-				freeArray(a[x][index]);
-				a[x].splice(index, 1);
-			}
-			this.cy--;
-			break;
-		case 2:	// Z axis
-			if (index >= this.cz)
-				break;
-			for ( ; x < this.cx; x++)
-			{
-				for (y = 0; y < this.cy; y++)
-				{
-					a[x][y].splice(index, 1);
-				}
-			}
-			this.cz--;
-			break;
-		}
-	};
-	Acts.prototype.Insert = function (value, index, axis)
-	{
-		var x = 0, y = 0, z = 0;
-		index = Math.floor(index);
-		var a = this.arr;
-		if (index < 0)
-			return;
-		switch (axis) {
-		case 0:	// X axis
-			if (index > this.cx)
-				return;
-			x = index;
-			a.splice(x, 0, allocArray());
-			a[x].length = this.cy;
-			for ( ; y < this.cy; y++)
-			{
-				a[x][y] = allocArray();
-				a[x][y].length = this.cz;
-				for (z = 0; z < this.cz; z++)
-					a[x][y][z] = value;
-			}
-			this.cx++;
-			break;
-		case 1: // Y axis
-			if (index > this.cy)
-				return;
-			for ( ; x < this.cx; x++)
-			{
-				y = index;
-				a[x].splice(y, 0, allocArray());
-				a[x][y].length = this.cz;
-				for (z = 0; z < this.cz; z++)
-					a[x][y][z] = value;
-			}
-			this.cy++;
-			break;
-		case 2:	// Z axis
-			if (index > this.cz)
-				return;
-			for ( ; x < this.cx; x++)
-			{
-				for (y = 0; y < this.cy; y++)
-				{
-					a[x][y].splice(index, 0, value);
-				}
-			}
-			this.cz++;
-			break;
-		}
-	};
-	Acts.prototype.JSONLoad = function (json_)
-	{
-		var o;
-		try {
-			o = JSON.parse(json_);
-		}
-		catch(e) { return; }
-		if (!o["c2array"])		// presumably not a c2array object
-			return;
-		var sz = o["size"];
-		this.cx = sz[0];
-		this.cy = sz[1];
-		this.cz = sz[2];
-		this.arr = o["data"];
-	};
-	Acts.prototype.JSONDownload = function (filename)
-	{
-		var a = document.createElement("a");
-		if (typeof a.download === "undefined")
-		{
-			var str = 'data:text/html,' + encodeURIComponent("<p><a download='" + filename + "' href=\"data:application/json,"
-				+ encodeURIComponent(this.getAsJSON())
-				+ "\">Download link</a></p>");
-			window.open(str);
-		}
-		else
-		{
-			var body = document.getElementsByTagName("body")[0];
-			a.textContent = filename;
-			a.href = "data:application/json," + encodeURIComponent(this.getAsJSON());
-			a.download = filename;
-			body.appendChild(a);
-			var clickEvent = document.createEvent("MouseEvent");
-			clickEvent.initMouseEvent("click", true, true, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
-			a.dispatchEvent(clickEvent);
-			body.removeChild(a);
-		}
-	};
-	pluginProto.acts = new Acts();
-	function Exps() {};
-	Exps.prototype.At = function (ret, x, y_, z_)
-	{
-		var y = y_ || 0;
-		var z = z_ || 0;
-		ret.set_any(this.at(x, y, z));
-	};
-	Exps.prototype.Width = function (ret)
-	{
-		ret.set_int(this.cx);
-	};
-	Exps.prototype.Height = function (ret)
-	{
-		ret.set_int(this.cy);
-	};
-	Exps.prototype.Depth = function (ret)
-	{
-		ret.set_int(this.cz);
-	};
-	Exps.prototype.CurX = function (ret)
-	{
-		ret.set_int(this.forX);
-	};
-	Exps.prototype.CurY = function (ret)
-	{
-		ret.set_int(this.forY);
-	};
-	Exps.prototype.CurZ = function (ret)
-	{
-		ret.set_int(this.forZ);
-	};
-	Exps.prototype.CurValue = function (ret)
-	{
-		ret.set_any(this.at(this.forX, this.forY, this.forZ));
-	};
-	Exps.prototype.Front = function (ret)
-	{
-		ret.set_any(this.at(0, 0, 0));
-	};
-	Exps.prototype.Back = function (ret)
-	{
-		ret.set_any(this.at(this.cx - 1, 0, 0));
-	};
-	Exps.prototype.IndexOf = function (ret, v)
-	{
-		for (var i = 0; i < this.cx; i++)
-		{
-			if (this.arr[i][0][0] === v)
-			{
-				ret.set_int(i);
-				return;
-			}
-		}
-		ret.set_int(-1);
-	};
-	Exps.prototype.LastIndexOf = function (ret, v)
-	{
-		for (var i = this.cx - 1; i >= 0; i--)
-		{
-			if (this.arr[i][0][0] === v)
-			{
-				ret.set_int(i);
-				return;
-			}
-		}
-		ret.set_int(-1);
-	};
-	Exps.prototype.AsJSON = function (ret)
-	{
-		ret.set_string(this.getAsJSON());
-	};
-	pluginProto.exps = new Exps();
-}());
-;
-;
-cr.plugins_.Audio = function(runtime)
-{
-	this.runtime = runtime;
-};
-(function ()
-{
-	var pluginProto = cr.plugins_.Audio.prototype;
-	pluginProto.Type = function(plugin)
-	{
-		this.plugin = plugin;
-		this.runtime = plugin.runtime;
-	};
-	var typeProto = pluginProto.Type.prototype;
-	typeProto.onCreate = function()
-	{
-	};
-	var audRuntime = null;
-	var audInst = null;
-	var audTag = "";
-	var appPath = "";			// for PhoneGap only
-	var API_HTML5 = 0;
-	var API_WEBAUDIO = 1;
-	var API_PHONEGAP = 2;
-	var API_APPMOBI = 3;
-	var api = API_HTML5;
-	var context = null;
-	var audioBuffers = [];		// cache of buffers
-	var audioInstances = [];	// cache of instances
-	var lastAudio = null;
-	var useOgg = false;			// determined at create time
-	var timescale_mode = 0;
-	var silent = false;
-	var masterVolume = 1;
-	var listenerX = 0;
-	var listenerY = 0;
-	var panningModel = 1;		// HRTF
-	var distanceModel = 1;		// Inverse
-	var refDistance = 10;
-	var maxDistance = 10000;
-	var rolloffFactor = 1;
-	var micSource = null;
-	var micTag = "";
-	var isMusicWorkaround = false;
-	var musicPlayNextTouch = [];
-	function dbToLinear(x)
-	{
-		var v = dbToLinear_nocap(x);
-		if (v < 0)
-			v = 0;
-		if (v > 1)
-			v = 1;
-		return v;
-	};
-	function linearToDb(x)
-	{
-		if (x < 0)
-			x = 0;
-		if (x > 1)
-			x = 1;
-		return linearToDb_nocap(x);
-	};
-	function dbToLinear_nocap(x)
-	{
-		return Math.pow(10, x / 20);
-	};
-	function linearToDb_nocap(x)
-	{
-		return (Math.log(x) / Math.log(10)) * 20;
-	};
-	var effects = {};
-	function getDestinationForTag(tag)
-	{
-		tag = tag.toLowerCase();
-		if (effects.hasOwnProperty(tag))
-		{
-			if (effects[tag].length)
-				return effects[tag][0].getInputNode();
-		}
-		return context["destination"];
-	};
-	function createGain()
-	{
-		if (context["createGain"])
-			return context["createGain"]();
-		else
-			return context["createGainNode"]();
-	};
-	function createDelay(d)
-	{
-		if (context["createDelay"])
-			return context["createDelay"](d);
-		else
-			return context["createDelayNode"](d);
-	};
-	function startSource(s)
-	{
-		if (s["start"])
-			s["start"](0);
-		else
-			s["noteOn"](0);
-	};
-	function startSourceAt(s, x, d)
-	{
-		if (s["start"])
-			s["start"](0, x);
-		else
-			s["noteGrainOn"](0, x, d - x);
-	};
-	function stopSource(s)
-	{
-		try {
-			if (s["stop"])
-				s["stop"](0);
-			else
-				s["noteOff"](0);
-		}
-		catch (e) {}
-	};
-	function setAudioParam(ap, value, ramp, time)
-	{
-		if (!ap)
-			return;		// iOS is missing some parameters
-		ap["cancelScheduledValues"](0);
-		if (time === 0)
-		{
-			ap["value"] = value;
-			return;
-		}
-		var curTime = context["currentTime"];
-		time += curTime;
-		switch (ramp) {
-		case 0:		// step
-			ap["setValueAtTime"](value, time);
-			break;
-		case 1:		// linear
-			ap["setValueAtTime"](ap["value"], curTime);		// to set what to ramp from
-			ap["linearRampToValueAtTime"](value, time);
-			break;
-		case 2:		// exponential
-			ap["setValueAtTime"](ap["value"], curTime);		// to set what to ramp from
-			ap["exponentialRampToValueAtTime"](value, time);
-			break;
-		}
-	};
-	var filterTypes = ["lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peaking", "notch", "allpass"];
-	function FilterEffect(type, freq, detune, q, gain, mix)
-	{
-		this.type = "filter";
-		this.params = [type, freq, detune, q, gain, mix];
-		this.inputNode = createGain();
-		this.wetNode = createGain();
-		this.wetNode["gain"]["value"] = mix;
-		this.dryNode = createGain();
-		this.dryNode["gain"]["value"] = 1 - mix;
-		this.filterNode = context["createBiquadFilter"]();
-		if (typeof this.filterNode["type"] === "number")
-			this.filterNode["type"] = type;
-		else
-			this.filterNode["type"] = filterTypes[type];
-		this.filterNode["frequency"]["value"] = freq;
-		if (this.filterNode["detune"])		// iOS 6 doesn't have detune yet
-			this.filterNode["detune"]["value"] = detune;
-		this.filterNode["Q"]["value"] = q;
-		this.filterNode["gain"]["value"] = gain;
-		this.inputNode["connect"](this.filterNode);
-		this.inputNode["connect"](this.dryNode);
-		this.filterNode["connect"](this.wetNode);
-	};
-	FilterEffect.prototype.connectTo = function (node)
-	{
-		this.wetNode["disconnect"]();
-		this.wetNode["connect"](node);
-		this.dryNode["disconnect"]();
-		this.dryNode["connect"](node);
-	};
-	FilterEffect.prototype.remove = function ()
-	{
-		this.inputNode["disconnect"]();
-		this.filterNode["disconnect"]();
-		this.wetNode["disconnect"]();
-		this.dryNode["disconnect"]();
-	};
-	FilterEffect.prototype.getInputNode = function ()
-	{
-		return this.inputNode;
-	};
-	FilterEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 0:		// mix
-			value = value / 100;
-			if (value < 0) value = 0;
-			if (value > 1) value = 1;
-			this.params[5] = value;
-			setAudioParam(this.wetNode["gain"], value, ramp, time);
-			setAudioParam(this.dryNode["gain"], 1 - value, ramp, time);
-			break;
-		case 1:		// filter frequency
-			this.params[1] = value;
-			setAudioParam(this.filterNode["frequency"], value, ramp, time);
-			break;
-		case 2:		// filter detune
-			this.params[2] = value;
-			setAudioParam(this.filterNode["detune"], value, ramp, time);
-			break;
-		case 3:		// filter Q
-			this.params[3] = value;
-			setAudioParam(this.filterNode["Q"], value, ramp, time);
-			break;
-		case 4:		// filter/delay gain (note value is in dB here)
-			this.params[4] = value;
-			setAudioParam(this.filterNode["gain"], value, ramp, time);
-			break;
-		}
-	};
-	function DelayEffect(delayTime, delayGain, mix)
-	{
-		this.type = "delay";
-		this.params = [delayTime, delayGain, mix];
-		this.inputNode = createGain();
-		this.wetNode = createGain();
-		this.wetNode["gain"]["value"] = mix;
-		this.dryNode = createGain();
-		this.dryNode["gain"]["value"] = 1 - mix;
-		this.mainNode = createGain();
-		this.delayNode = createDelay(delayTime);
-		this.delayNode["delayTime"]["value"] = delayTime;
-		this.delayGainNode = createGain();
-		this.delayGainNode["gain"]["value"] = delayGain;
-		this.inputNode["connect"](this.mainNode);
-		this.inputNode["connect"](this.dryNode);
-		this.mainNode["connect"](this.wetNode);
-		this.mainNode["connect"](this.delayNode);
-		this.delayNode["connect"](this.delayGainNode);
-		this.delayGainNode["connect"](this.mainNode);
-	};
-	DelayEffect.prototype.connectTo = function (node)
-	{
-		this.wetNode["disconnect"]();
-		this.wetNode["connect"](node);
-		this.dryNode["disconnect"]();
-		this.dryNode["connect"](node);
-	};
-	DelayEffect.prototype.remove = function ()
-	{
-		this.inputNode["disconnect"]();
-		this.mainNode["disconnect"]();
-		this.delayNode["disconnect"]();
-		this.delayGainNode["disconnect"]();
-		this.wetNode["disconnect"]();
-		this.dryNode["disconnect"]();
-	};
-	DelayEffect.prototype.getInputNode = function ()
-	{
-		return this.inputNode;
-	};
-	DelayEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 0:		// mix
-			value = value / 100;
-			if (value < 0) value = 0;
-			if (value > 1) value = 1;
-			this.params[2] = value;
-			setAudioParam(this.wetNode["gain"], value, ramp, time);
-			setAudioParam(this.dryNode["gain"], 1 - value, ramp, time);
-			break;
-		case 4:		// filter/delay gain (note value is passed in dB but needs to be linear here)
-			this.params[1] = dbToLinear(value);
-			setAudioParam(this.delayGainNode["gain"], dbToLinear(value), ramp, time);
-			break;
-		case 5:		// delay time
-			this.params[0] = value;
-			setAudioParam(this.delayNode["delayTime"], value, ramp, time);
-			break;
-		}
-	};
-	function ConvolveEffect(buffer, normalize, mix, src)
-	{
-		this.type = "convolve";
-		this.params = [normalize, mix, src];
-		this.inputNode = createGain();
-		this.wetNode = createGain();
-		this.wetNode["gain"]["value"] = mix;
-		this.dryNode = createGain();
-		this.dryNode["gain"]["value"] = 1 - mix;
-		this.convolveNode = context["createConvolver"]();
-		if (buffer)
-		{
-			this.convolveNode["normalize"] = normalize;
-			this.convolveNode["buffer"] = buffer;
-		}
-		this.inputNode["connect"](this.convolveNode);
-		this.inputNode["connect"](this.dryNode);
-		this.convolveNode["connect"](this.wetNode);
-	};
-	ConvolveEffect.prototype.connectTo = function (node)
-	{
-		this.wetNode["disconnect"]();
-		this.wetNode["connect"](node);
-		this.dryNode["disconnect"]();
-		this.dryNode["connect"](node);
-	};
-	ConvolveEffect.prototype.remove = function ()
-	{
-		this.inputNode["disconnect"]();
-		this.convolveNode["disconnect"]();
-		this.wetNode["disconnect"]();
-		this.dryNode["disconnect"]();
-	};
-	ConvolveEffect.prototype.getInputNode = function ()
-	{
-		return this.inputNode;
-	};
-	ConvolveEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 0:		// mix
-			value = value / 100;
-			if (value < 0) value = 0;
-			if (value > 1) value = 1;
-			this.params[1] = value;
-			setAudioParam(this.wetNode["gain"], value, ramp, time);
-			setAudioParam(this.dryNode["gain"], 1 - value, ramp, time);
-			break;
-		}
-	};
-	function FlangerEffect(delay, modulation, freq, feedback, mix)
-	{
-		this.type = "flanger";
-		this.params = [delay, modulation, freq, feedback, mix];
-		this.inputNode = createGain();
-		this.dryNode = createGain();
-		this.dryNode["gain"]["value"] = 1 - (mix / 2);
-		this.wetNode = createGain();
-		this.wetNode["gain"]["value"] = mix / 2;
-		this.feedbackNode = createGain();
-		this.feedbackNode["gain"]["value"] = feedback;
-		this.delayNode = createDelay(delay + modulation);
-		this.delayNode["delayTime"]["value"] = delay;
-		this.oscNode = context["createOscillator"]();
-		this.oscNode["frequency"]["value"] = freq;
-		this.oscGainNode = createGain();
-		this.oscGainNode["gain"]["value"] = modulation;
-		this.inputNode["connect"](this.delayNode);
-		this.inputNode["connect"](this.dryNode);
-		this.delayNode["connect"](this.wetNode);
-		this.delayNode["connect"](this.feedbackNode);
-		this.feedbackNode["connect"](this.delayNode);
-		this.oscNode["connect"](this.oscGainNode);
-		this.oscGainNode["connect"](this.delayNode["delayTime"]);
-		startSource(this.oscNode);
-	};
-	FlangerEffect.prototype.connectTo = function (node)
-	{
-		this.dryNode["disconnect"]();
-		this.dryNode["connect"](node);
-		this.wetNode["disconnect"]();
-		this.wetNode["connect"](node);
-	};
-	FlangerEffect.prototype.remove = function ()
-	{
-		this.inputNode["disconnect"]();
-		this.delayNode["disconnect"]();
-		this.oscNode["disconnect"]();
-		this.oscGainNode["disconnect"]();
-		this.dryNode["disconnect"]();
-		this.wetNode["disconnect"]();
-		this.feedbackNode["disconnect"]();
-	};
-	FlangerEffect.prototype.getInputNode = function ()
-	{
-		return this.inputNode;
-	};
-	FlangerEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 0:		// mix
-			value = value / 100;
-			if (value < 0) value = 0;
-			if (value > 1) value = 1;
-			this.params[4] = value;
-			setAudioParam(this.wetNode["gain"], value / 2, ramp, time);
-			setAudioParam(this.dryNode["gain"], 1 - (value / 2), ramp, time);
-			break;
-		case 6:		// modulation
-			this.params[1] = value / 1000;
-			setAudioParam(this.oscGainNode["gain"], value / 1000, ramp, time);
-			break;
-		case 7:		// modulation frequency
-			this.params[2] = value;
-			setAudioParam(this.oscNode["frequency"], value, ramp, time);
-			break;
-		case 8:		// feedback
-			this.params[3] = value / 100;
-			setAudioParam(this.feedbackNode["gain"], value / 100, ramp, time);
-			break;
-		}
-	};
-	function PhaserEffect(freq, detune, q, modulation, modfreq, mix)
-	{
-		this.type = "phaser";
-		this.params = [freq, detune, q, modulation, modfreq, mix];
-		this.inputNode = createGain();
-		this.dryNode = createGain();
-		this.dryNode["gain"]["value"] = 1 - (mix / 2);
-		this.wetNode = createGain();
-		this.wetNode["gain"]["value"] = mix / 2;
-		this.filterNode = context["createBiquadFilter"]();
-		if (typeof this.filterNode["type"] === "number")
-			this.filterNode["type"] = 7;	// all-pass
-		else
-			this.filterNode["type"] = "allpass";
-		this.filterNode["frequency"]["value"] = freq;
-		if (this.filterNode["detune"])		// iOS 6 doesn't have detune yet
-			this.filterNode["detune"]["value"] = detune;
-		this.filterNode["Q"]["value"] = q;
-		this.oscNode = context["createOscillator"]();
-		this.oscNode["frequency"]["value"] = modfreq;
-		this.oscGainNode = createGain();
-		this.oscGainNode["gain"]["value"] = modulation;
-		this.inputNode["connect"](this.filterNode);
-		this.inputNode["connect"](this.dryNode);
-		this.filterNode["connect"](this.wetNode);
-		this.oscNode["connect"](this.oscGainNode);
-		this.oscGainNode["connect"](this.filterNode["frequency"]);
-		startSource(this.oscNode);
-	};
-	PhaserEffect.prototype.connectTo = function (node)
-	{
-		this.dryNode["disconnect"]();
-		this.dryNode["connect"](node);
-		this.wetNode["disconnect"]();
-		this.wetNode["connect"](node);
-	};
-	PhaserEffect.prototype.remove = function ()
-	{
-		this.inputNode["disconnect"]();
-		this.filterNode["disconnect"]();
-		this.oscNode["disconnect"]();
-		this.oscGainNode["disconnect"]();
-		this.dryNode["disconnect"]();
-		this.wetNode["disconnect"]();
-	};
-	PhaserEffect.prototype.getInputNode = function ()
-	{
-		return this.inputNode;
-	};
-	PhaserEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 0:		// mix
-			value = value / 100;
-			if (value < 0) value = 0;
-			if (value > 1) value = 1;
-			this.params[5] = value;
-			setAudioParam(this.wetNode["gain"], value / 2, ramp, time);
-			setAudioParam(this.dryNode["gain"], 1 - (value / 2), ramp, time);
-			break;
-		case 1:		// filter frequency
-			this.params[0] = value;
-			setAudioParam(this.filterNode["frequency"], value, ramp, time);
-			break;
-		case 2:		// filter detune
-			this.params[1] = value;
-			setAudioParam(this.filterNode["detune"], value, ramp, time);
-			break;
-		case 3:		// filter Q
-			this.params[2] = value;
-			setAudioParam(this.filterNode["Q"], value, ramp, time);
-			break;
-		case 6:		// modulation
-			this.params[3] = value;
-			setAudioParam(this.oscGainNode["gain"], value, ramp, time);
-			break;
-		case 7:		// modulation frequency
-			this.params[4] = value;
-			setAudioParam(this.oscNode["frequency"], value, ramp, time);
-			break;
-		}
-	};
-	function GainEffect(g)
-	{
-		this.type = "gain";
-		this.params = [g];
-		this.node = createGain();
-		this.node["gain"]["value"] = g;
-	};
-	GainEffect.prototype.connectTo = function (node_)
-	{
-		this.node["disconnect"]();
-		this.node["connect"](node_);
-	};
-	GainEffect.prototype.remove = function ()
-	{
-		this.node["disconnect"]();
-	};
-	GainEffect.prototype.getInputNode = function ()
-	{
-		return this.node;
-	};
-	GainEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 4:		// gain
-			this.params[0] = dbToLinear(value);
-			setAudioParam(this.node["gain"], dbToLinear(value), ramp, time);
-			break;
-		}
-	};
-	function TremoloEffect(freq, mix)
-	{
-		this.type = "tremolo";
-		this.params = [freq, mix];
-		this.node = createGain();
-		this.node["gain"]["value"] = 1 - (mix / 2);
-		this.oscNode = context["createOscillator"]();
-		this.oscNode["frequency"]["value"] = freq;
-		this.oscGainNode = createGain();
-		this.oscGainNode["gain"]["value"] = mix / 2;
-		this.oscNode["connect"](this.oscGainNode);
-		this.oscGainNode["connect"](this.node["gain"]);
-		startSource(this.oscNode);
-	};
-	TremoloEffect.prototype.connectTo = function (node_)
-	{
-		this.node["disconnect"]();
-		this.node["connect"](node_);
-	};
-	TremoloEffect.prototype.remove = function ()
-	{
-		this.oscNode["disconnect"]();
-		this.oscGainNode["disconnect"]();
-		this.node["disconnect"]();
-	};
-	TremoloEffect.prototype.getInputNode = function ()
-	{
-		return this.node;
-	};
-	TremoloEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 0:		// mix
-			value = value / 100;
-			if (value < 0) value = 0;
-			if (value > 1) value = 1;
-			this.params[1] = value;
-			setAudioParam(this.node["gain"]["value"], 1 - (value / 2), ramp, time);
-			setAudioParam(this.oscGainNode["gain"]["value"], value / 2, ramp, time);
-			break;
-		case 7:		// modulation frequency
-			this.params[0] = value;
-			setAudioParam(this.oscNode["frequency"], value, ramp, time);
-			break;
-		}
-	};
-	function RingModulatorEffect(freq, mix)
-	{
-		this.type = "ringmod";
-		this.params = [freq, mix];
-		this.inputNode = createGain();
-		this.wetNode = createGain();
-		this.wetNode["gain"]["value"] = mix;
-		this.dryNode = createGain();
-		this.dryNode["gain"]["value"] = 1 - mix;
-		this.ringNode = createGain();
-		this.ringNode["gain"]["value"] = 0;
-		this.oscNode = context["createOscillator"]();
-		this.oscNode["frequency"]["value"] = freq;
-		this.oscNode["connect"](this.ringNode["gain"]);
-		startSource(this.oscNode);
-		this.inputNode["connect"](this.ringNode);
-		this.inputNode["connect"](this.dryNode);
-		this.ringNode["connect"](this.wetNode);
-	};
-	RingModulatorEffect.prototype.connectTo = function (node_)
-	{
-		this.wetNode["disconnect"]();
-		this.wetNode["connect"](node_);
-		this.dryNode["disconnect"]();
-		this.dryNode["connect"](node_);
-	};
-	RingModulatorEffect.prototype.remove = function ()
-	{
-		this.oscNode["disconnect"]();
-		this.ringNode["disconnect"]();
-		this.inputNode["disconnect"]();
-		this.wetNode["disconnect"]();
-		this.dryNode["disconnect"]();
-	};
-	RingModulatorEffect.prototype.getInputNode = function ()
-	{
-		return this.inputNode;
-	};
-	RingModulatorEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 0:		// mix
-			value = value / 100;
-			if (value < 0) value = 0;
-			if (value > 1) value = 1;
-			this.params[1] = value;
-			setAudioParam(this.wetNode["gain"], value, ramp, time);
-			setAudioParam(this.dryNode["gain"], 1 - value, ramp, time);
-			break;
-		case 7:		// modulation frequency
-			this.params[0] = value;
-			setAudioParam(this.oscNode["frequency"], value, ramp, time);
-			break;
-		}
-	};
-	function DistortionEffect(threshold, headroom, drive, makeupgain, mix)
-	{
-		this.type = "distortion";
-		this.params = [threshold, headroom, drive, makeupgain, mix];
-		this.inputNode = createGain();
-		this.preGain = createGain();
-		this.postGain = createGain();
-		this.setDrive(drive, dbToLinear_nocap(makeupgain));
-		this.wetNode = createGain();
-		this.wetNode["gain"]["value"] = mix;
-		this.dryNode = createGain();
-		this.dryNode["gain"]["value"] = 1 - mix;
-		this.waveShaper = context["createWaveShaper"]();
-		this.curve = new Float32Array(65536);
-		this.generateColortouchCurve(threshold, headroom);
-		this.waveShaper.curve = this.curve;
-		this.inputNode["connect"](this.preGain);
-		this.inputNode["connect"](this.dryNode);
-		this.preGain["connect"](this.waveShaper);
-		this.waveShaper["connect"](this.postGain);
-		this.postGain["connect"](this.wetNode);
-	};
-	DistortionEffect.prototype.setDrive = function (drive, makeupgain)
-	{
-		if (drive < 0.01)
-			drive = 0.01;
-		this.preGain["gain"]["value"] = drive;
-		this.postGain["gain"]["value"] = Math.pow(1 / drive, 0.6) * makeupgain;
-	};
-	function e4(x, k)
-	{
-		return 1.0 - Math.exp(-k * x);
-	}
-	DistortionEffect.prototype.shape = function (x, linearThreshold, linearHeadroom)
-	{
-		var maximum = 1.05 * linearHeadroom * linearThreshold;
-		var kk = (maximum - linearThreshold);
-		var sign = x < 0 ? -1 : +1;
-		var absx = x < 0 ? -x : x;
-		var shapedInput = absx < linearThreshold ? absx : linearThreshold + kk * e4(absx - linearThreshold, 1.0 / kk);
-		shapedInput *= sign;
-		return shapedInput;
-	};
-	DistortionEffect.prototype.generateColortouchCurve = function (threshold, headroom)
-	{
-		var linearThreshold = dbToLinear_nocap(threshold);
-		var linearHeadroom = dbToLinear_nocap(headroom);
-		var n = 65536;
-		var n2 = n / 2;
-		var x = 0;
-		for (var i = 0; i < n2; ++i) {
-			x = i / n2;
-			x = this.shape(x, linearThreshold, linearHeadroom);
-			this.curve[n2 + i] = x;
-			this.curve[n2 - i - 1] = -x;
-		}
-	};
-	DistortionEffect.prototype.connectTo = function (node)
-	{
-		this.wetNode["disconnect"]();
-		this.wetNode["connect"](node);
-		this.dryNode["disconnect"]();
-		this.dryNode["connect"](node);
-	};
-	DistortionEffect.prototype.remove = function ()
-	{
-		this.inputNode["disconnect"]();
-		this.preGain["disconnect"]();
-		this.waveShaper["disconnect"]();
-		this.postGain["disconnect"]();
-		this.wetNode["disconnect"]();
-		this.dryNode["disconnect"]();
-	};
-	DistortionEffect.prototype.getInputNode = function ()
-	{
-		return this.inputNode;
-	};
-	DistortionEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-		switch (param) {
-		case 0:		// mix
-			value = value / 100;
-			if (value < 0) value = 0;
-			if (value > 1) value = 1;
-			this.params[4] = value;
-			setAudioParam(this.wetNode["gain"], value, ramp, time);
-			setAudioParam(this.dryNode["gain"], 1 - value, ramp, time);
-			break;
-		}
-	};
-	function CompressorEffect(threshold, knee, ratio, attack, release)
-	{
-		this.type = "compressor";
-		this.params = [threshold, knee, ratio, attack, release];
-		this.node = context["createDynamicsCompressor"]();
-		try {
-			this.node["threshold"]["value"] = threshold;
-			this.node["knee"]["value"] = knee;
-			this.node["ratio"]["value"] = ratio;
-			this.node["attack"]["value"] = attack;
-			this.node["release"]["value"] = release;
-		}
-		catch (e) {}
-	};
-	CompressorEffect.prototype.connectTo = function (node_)
-	{
-		this.node["disconnect"]();
-		this.node["connect"](node_);
-	};
-	CompressorEffect.prototype.remove = function ()
-	{
-		this.node["disconnect"]();
-	};
-	CompressorEffect.prototype.getInputNode = function ()
-	{
-		return this.node;
-	};
-	CompressorEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-	};
-	function AnalyserEffect(fftSize, smoothing)
-	{
-		this.type = "analyser";
-		this.params = [fftSize, smoothing];
-		this.node = context["createAnalyser"]();
-		this.node["fftSize"] = fftSize;
-		this.node["smoothingTimeConstant"] = smoothing;
-		this.freqBins = new Float32Array(this.node["frequencyBinCount"]);
-		this.signal = new Uint8Array(fftSize);
-		this.peak = 0;
-		this.rms = 0;
-	};
-	AnalyserEffect.prototype.tick = function ()
-	{
-		this.node["getFloatFrequencyData"](this.freqBins);
-		this.node["getByteTimeDomainData"](this.signal);
-		var fftSize = this.node["fftSize"];
-		var i = 0;
-		this.peak = 0;
-		var rmsSquaredSum = 0;
-		var s = 0;
-		for ( ; i < fftSize; i++)
-		{
-			s = (this.signal[i] - 128) / 128;
-			if (s < 0)
-				s = -s;
-			if (this.peak < s)
-				this.peak = s;
-			rmsSquaredSum += s * s;
-		}
-		this.peak = linearToDb(this.peak);
-		this.rms = linearToDb(Math.sqrt(rmsSquaredSum / fftSize));
-	};
-	AnalyserEffect.prototype.connectTo = function (node_)
-	{
-		this.node["disconnect"]();
-		this.node["connect"](node_);
-	};
-	AnalyserEffect.prototype.remove = function ()
-	{
-		this.node["disconnect"]();
-	};
-	AnalyserEffect.prototype.getInputNode = function ()
-	{
-		return this.node;
-	};
-	AnalyserEffect.prototype.setParam = function(param, value, ramp, time)
-	{
-	};
-	var OT_POS_SAMPLES = 4;
-	function ObjectTracker()
-	{
-		this.obj = null;
-		this.loadUid = 0;
-		this.speeds = [];
-		this.lastX = 0;
-		this.lastY = 0;
-		this.moveAngle = 0;
-	};
-	ObjectTracker.prototype.setObject = function (obj_)
-	{
-		this.obj = obj_;
-		if (this.obj)
-		{
-			this.lastX = this.obj.x;
-			this.lastY = this.obj.y;
-		}
-		this.speeds.length = 0;
-	};
-	ObjectTracker.prototype.hasObject = function ()
-	{
-		return !!this.obj;
-	};
-	ObjectTracker.prototype.tick = function (dt)
-	{
-		if (!this.obj || dt === 0)
-			return;
-		this.moveAngle = cr.angleTo(this.lastX, this.lastY, this.obj.x, this.obj.y);
-		var s = cr.distanceTo(this.lastX, this.lastY, this.obj.x, this.obj.y) / dt;
-		if (this.speeds.length < OT_POS_SAMPLES)
-			this.speeds.push(s);
-		else
-		{
-			this.speeds.shift();
-			this.speeds.push(s);
-		}
-		this.lastX = this.obj.x;
-		this.lastY = this.obj.y;
-	};
-	ObjectTracker.prototype.getSpeed = function ()
-	{
-		if (!this.speeds.length)
-			return 0;
-		var i, len, sum = 0;
-		for (i = 0, len = this.speeds.length; i < len; i++)
-		{
-			sum += this.speeds[i];
-		}
-		return sum / this.speeds.length;
-	};
-	ObjectTracker.prototype.getVelocityX = function ()
-	{
-		return Math.cos(this.moveAngle) * this.getSpeed();
-	};
-	ObjectTracker.prototype.getVelocityY = function ()
-	{
-		return Math.sin(this.moveAngle) * this.getSpeed();
-	};
-	var iOShadtouch = false;	// has had touch input on iOS to work around web audio API muting
-	function C2AudioBuffer(src_, is_music)
-	{
-		this.src = src_;
-		this.myapi = api;
-		this.is_music = is_music;
-		this.added_end_listener = false;
-		var self = this;
-		this.outNode = null;
-		this.mediaSourceNode = null;
-		this.panWhenReady = [];		// for web audio API positioned sounds
-		this.seekWhenReady = 0;
-		this.pauseWhenReady = false;
-		this.supportWebAudioAPI = false;
-		this.failedToLoad = false;
-		if (api === API_WEBAUDIO && is_music)
-		{
-			this.myapi = API_HTML5;
-			this.outNode = createGain();
-		}
-		this.bufferObject = null;			// actual audio object
-		this.audioData = null;				// web audio api: ajax request result (compressed audio that needs decoding)
-		var request;
-		switch (this.myapi) {
-		case API_HTML5:
-			this.bufferObject = new Audio();
-			if (api === API_WEBAUDIO && context["createMediaElementSource"] && !audRuntime.isFirefox && !/wiiu/i.test(navigator.userAgent))
-			{
-				this.supportWebAudioAPI = true;		// can be routed through web audio api
-				this.bufferObject.addEventListener("canplay", function ()
-				{
-					if (!self.mediaSourceNode)		// protect against this event firing twice
-					{
-						self.mediaSourceNode = context["createMediaElementSource"](self.bufferObject);
-						self.mediaSourceNode["connect"](self.outNode);
-					}
-				});
-			}
-			this.bufferObject.autoplay = false;	// this is only a source buffer, not an instance
-			this.bufferObject.preload = "auto";
-			this.bufferObject.src = src_;
-			break;
-		case API_WEBAUDIO:
-			request = new XMLHttpRequest();
-			request.open("GET", src_, true);
-			request.responseType = "arraybuffer";
-			request.onload = function () {
-				self.audioData = request.response;
-				self.decodeAudioBuffer();
-			};
-			request.onerror = function () {
-				self.failedToLoad = true;
-			};
-			request.send();
-			break;
-		case API_PHONEGAP:
-			this.bufferObject = true;
-			break;
-		case API_APPMOBI:
-			this.bufferObject = true;
-			break;
-		}
-	};
-	C2AudioBuffer.prototype.decodeAudioBuffer = function ()
-	{
-		if (this.bufferObject || !this.audioData)
-			return;		// audio already decoded or AJAX request not yet complete
-		var self = this;
-		if (context["decodeAudioData"])
-		{
-			context["decodeAudioData"](this.audioData, function (buffer) {
-					self.bufferObject = buffer;
-					var p, i, len, a;
-					if (!cr.is_undefined(self.playTagWhenReady) && !silent)
-					{
-						if (self.panWhenReady.length)
-						{
-							for (i = 0, len = self.panWhenReady.length; i < len; i++)
-							{
-								p = self.panWhenReady[i];
-								a = new C2AudioInstance(self, p.thistag);
-								a.setPannerEnabled(true);
-								if (typeof p.objUid !== "undefined")
-								{
-									p.obj = audRuntime.getObjectByUID(p.objUid);
-									if (!p.obj)
-										continue;
-								}
-								if (p.obj)
-								{
-									var px = cr.rotatePtAround(p.obj.x, p.obj.y, -p.obj.layer.getAngle(), listenerX, listenerY, true);
-									var py = cr.rotatePtAround(p.obj.x, p.obj.y, -p.obj.layer.getAngle(), listenerX, listenerY, false);
-									a.setPan(px, py, cr.to_degrees(p.obj.angle - p.obj.layer.getAngle()), p.ia, p.oa, p.og);
-									a.setObject(p.obj);
-								}
-								else
-								{
-									a.setPan(p.x, p.y, p.a, p.ia, p.oa, p.og);
-								}
-								a.play(self.loopWhenReady, self.volumeWhenReady, self.seekWhenReady);
-								if (self.pauseWhenReady)
-									a.pause();
-								audioInstances.push(a);
-							}
-							self.panWhenReady.length = 0;
-						}
-						else
-						{
-							a = new C2AudioInstance(self, self.playTagWhenReady);
-							a.play(self.loopWhenReady, self.volumeWhenReady, self.seekWhenReady);
-							if (self.pauseWhenReady)
-								a.pause();
-							audioInstances.push(a);
-						}
-					}
-					else if (!cr.is_undefined(self.convolveWhenReady))
-					{
-						var convolveNode = self.convolveWhenReady.convolveNode;
-						convolveNode["normalize"] = self.normalizeWhenReady;
-						convolveNode["buffer"] = buffer;
-					}
-			}, function (e) {
-				self.failedToLoad = true;
-			});
-		}
-		else
-		{
-			this.bufferObject = context["createBuffer"](this.audioData, false);
-			if (!cr.is_undefined(this.playTagWhenReady) && !silent)
-			{
-				var a = new C2AudioInstance(this, this.playTagWhenReady);
-				a.play(this.loopWhenReady, this.volumeWhenReady, this.seekWhenReady);
-				if (this.pauseWhenReady)
-					a.pause();
-				audioInstances.push(a);
-			}
-			else if (!cr.is_undefined(this.convolveWhenReady))
-			{
-				var convolveNode = this.convolveWhenReady.convolveNode;
-				convolveNode["normalize"] = this.normalizeWhenReady;
-				convolveNode["buffer"] = this.bufferObject;
-			}
-		}
-	};
-	C2AudioBuffer.prototype.isLoaded = function ()
-	{
-		switch (this.myapi) {
-		case API_HTML5:
-			return this.bufferObject["readyState"] >= 4;	// HAVE_ENOUGH_DATA
-		case API_WEBAUDIO:
-			return !!this.audioData;			// null until AJAX request completes
-		case API_PHONEGAP:
-			return true;
-		case API_APPMOBI:
-			return true;
-		}
-		return false;
-	};
-	C2AudioBuffer.prototype.isLoadedAndDecoded = function ()
-	{
-		switch (this.myapi) {
-		case API_HTML5:
-			return this.bufferObject["readyState"] >= 4;	// HAVE_ENOUGH_DATA
-		case API_WEBAUDIO:
-			return !!this.audioData && !!this.bufferObject;
-		case API_PHONEGAP:
-			return true;
-		case API_APPMOBI:
-			return true;
-		}
-		return false;
-	};
-	C2AudioBuffer.prototype.hasFailedToLoad = function ()
-	{
-		switch (this.myapi) {
-		case API_HTML5:
-			return !!this.bufferObject["error"];
-		case API_WEBAUDIO:
-			return this.failedToLoad;
-		}
-		return false;
-	};
-	function C2AudioInstance(buffer_, tag_)
-	{
-		var self = this;
-		this.tag = tag_;
-		this.fresh = true;
-		this.stopped = true;
-		this.src = buffer_.src;
-		this.buffer = buffer_;
-		this.myapi = api;
-		this.is_music = buffer_.is_music;
-		this.playbackRate = 1;
-		this.pgended = true;			// for PhoneGap only: ended flag
-		this.resume_me = false;			// make sure resumes when leaving suspend
-		this.is_paused = false;
-		this.resume_position = 0;		// for web audio api to resume from correct playback position
-		this.looping = false;
-		this.is_muted = false;
-		this.is_silent = false;
-		this.volume = 1;
-		this.mutevol = 1;
-		this.startTime = audRuntime.kahanTime.sum;
-		this.gainNode = null;
-		this.pannerNode = null;
-		this.pannerEnabled = false;
-		this.objectTracker = null;
-		this.panX = 0;
-		this.panY = 0;
-		this.panAngle = 0;
-		this.panConeInner = 0;
-		this.panConeOuter = 0;
-		this.panConeOuterGain = 0;
-		this.instanceObject = null;
-		var add_end_listener = false;
-		if (this.myapi === API_WEBAUDIO && this.buffer.myapi === API_HTML5 && !this.buffer.supportWebAudioAPI)
-			this.myapi = API_HTML5;
-		switch (this.myapi) {
-		case API_HTML5:
-			if (this.is_music)
-			{
-				this.instanceObject = buffer_.bufferObject;
-				add_end_listener = !buffer_.added_end_listener;
-				buffer_.added_end_listener = true;
-			}
-			else
-			{
-				this.instanceObject = new Audio();
-				this.instanceObject.autoplay = false;
-				this.instanceObject.src = buffer_.bufferObject.src;
-				add_end_listener = true;
-			}
-			if (add_end_listener)
-			{
-				this.instanceObject.addEventListener('ended', function () {
-						audTag = self.tag;
-						self.stopped = true;
-						audRuntime.trigger(cr.plugins_.Audio.prototype.cnds.OnEnded, audInst);
-				});
-			}
-			break;
-		case API_WEBAUDIO:
-			this.gainNode = createGain();
-			this.gainNode["connect"](getDestinationForTag(tag_));
-			if (this.buffer.myapi === API_WEBAUDIO)
-			{
-				if (buffer_.bufferObject)
-				{
-					this.instanceObject = context["createBufferSource"]();
-					this.instanceObject["buffer"] = buffer_.bufferObject;
-					this.instanceObject["connect"](this.gainNode);
-				}
-			}
-			else
-			{
-				this.instanceObject = this.buffer.bufferObject;		// reference the audio element
-				this.buffer.outNode["connect"](this.gainNode);
-			}
-			break;
-		case API_PHONEGAP:
-			this.instanceObject = new window["Media"](appPath + this.src, null, null, function (status) {
-					if (status === window["Media"]["MEDIA_STOPPED"])
-					{
-						self.pgended = true;
-						self.stopped = true;
-						audTag = self.tag;
-						audRuntime.trigger(cr.plugins_.Audio.prototype.cnds.OnEnded, audInst);
-					}
-			});
-			break;
-		case API_APPMOBI:
-			this.instanceObject = true;
-			break;
-		}
-	};
-	C2AudioInstance.prototype.hasEnded = function ()
-	{
-		switch (this.myapi) {
-		case API_HTML5:
-			return this.instanceObject.ended;
-		case API_WEBAUDIO:
-			if (this.buffer.myapi === API_WEBAUDIO)
-			{
-				if (!this.fresh && !this.stopped && this.instanceObject["loop"])
-					return false;
-				if (this.is_paused)
-					return false;
-				return (audRuntime.kahanTime.sum - this.startTime) > this.buffer.bufferObject["duration"];
-			}
-			else
-				return this.instanceObject.ended;
-		case API_PHONEGAP:
-			return this.pgended;
-		case API_APPMOBI:
-			true;	// recycling an AppMobi sound does not matter because it will just do another throwaway playSound
-		}
-		return true;
-	};
-	C2AudioInstance.prototype.canBeRecycled = function ()
-	{
-		if (this.fresh || this.stopped)
-			return true;		// not yet used or is not playing
-		return this.hasEnded();
-	};
-	C2AudioInstance.prototype.setPannerEnabled = function (enable_)
-	{
-		if (api !== API_WEBAUDIO)
-			return;
-		if (!this.pannerEnabled && enable_)
-		{
-			if (!this.gainNode)
-				return;
-			if (!this.pannerNode)
-			{
-				this.pannerNode = context["createPanner"]();
-				if (typeof this.pannerNode["panningModel"] === "number")
-					this.pannerNode["panningModel"] = panningModel;
-				else
-					this.pannerNode["panningModel"] = ["equalpower", "HRTF", "soundfield"][panningModel];
-				if (typeof this.pannerNode["distanceModel"] === "number")
-					this.pannerNode["distanceModel"] = distanceModel;
-				else
-					this.pannerNode["distanceModel"] = ["linear", "inverse", "exponential"][distanceModel];
-				this.pannerNode["refDistance"] = refDistance;
-				this.pannerNode["maxDistance"] = maxDistance;
-				this.pannerNode["rolloffFactor"] = rolloffFactor;
-			}
-			this.gainNode["disconnect"]();
-			this.gainNode["connect"](this.pannerNode);
-			this.pannerNode["connect"](getDestinationForTag(this.tag));
-			this.pannerEnabled = true;
-		}
-		else if (this.pannerEnabled && !enable_)
-		{
-			if (!this.gainNode)
-				return;
-			this.pannerNode["disconnect"]();
-			this.gainNode["disconnect"]();
-			this.gainNode["connect"](getDestinationForTag(this.tag));
-			this.pannerEnabled = false;
-		}
-	};
-	C2AudioInstance.prototype.setPan = function (x, y, angle, innerangle, outerangle, outergain)
-	{
-		if (!this.pannerEnabled || api !== API_WEBAUDIO)
-			return;
-		this.pannerNode["setPosition"](x, y, 0);
-		this.pannerNode["setOrientation"](Math.cos(cr.to_radians(angle)), Math.sin(cr.to_radians(angle)), 0);
-		this.pannerNode["coneInnerAngle"] = innerangle;
-		this.pannerNode["coneOuterAngle"] = outerangle;
-		this.pannerNode["coneOuterGain"] = outergain;
-		this.panX = x;
-		this.panY = y;
-		this.panAngle = angle;
-		this.panConeInner = innerangle;
-		this.panConeOuter = outerangle;
-		this.panConeOuterGain = outergain;
-	};
-	C2AudioInstance.prototype.setObject = function (o)
-	{
-		if (!this.pannerEnabled || api !== API_WEBAUDIO)
-			return;
-		if (!this.objectTracker)
-			this.objectTracker = new ObjectTracker();
-		this.objectTracker.setObject(o);
-	};
-	C2AudioInstance.prototype.tick = function (dt)
-	{
-		if (!this.pannerEnabled || api !== API_WEBAUDIO || !this.objectTracker || !this.objectTracker.hasObject() || !this.isPlaying())
-		{
-			return;
-		}
-		this.objectTracker.tick(dt);
-		var inst = this.objectTracker.obj;
-		var px = cr.rotatePtAround(inst.x, inst.y, -inst.layer.getAngle(), listenerX, listenerY, true);
-		var py = cr.rotatePtAround(inst.x, inst.y, -inst.layer.getAngle(), listenerX, listenerY, false);
-		this.pannerNode["setPosition"](px, py, 0);
-		var a = 0;
-		if (typeof this.objectTracker.obj.angle !== "undefined")
-		{
-			a = inst.angle - inst.layer.getAngle();
-			this.pannerNode["setOrientation"](Math.cos(a), Math.sin(a), 0);
-		}
-		px = cr.rotatePtAround(this.objectTracker.getVelocityX(), this.objectTracker.getVelocityY(), -inst.layer.getAngle(), 0, 0, true);
-		py = cr.rotatePtAround(this.objectTracker.getVelocityX(), this.objectTracker.getVelocityY(), -inst.layer.getAngle(), 0, 0, false);
-		this.pannerNode["setVelocity"](px, py, 0);
-	};
-	C2AudioInstance.prototype.play = function (looping, vol, fromPosition)
-	{
-		var instobj = this.instanceObject;
-		this.looping = looping;
-		this.volume = vol;
-		var seekPos = fromPosition || 0;
-		switch (this.myapi) {
-		case API_HTML5:
-			if (instobj.playbackRate !== 1.0)
-				instobj.playbackRate = 1.0;
-			if (instobj.volume !== vol * masterVolume)
-				instobj.volume = vol * masterVolume;
-			if (instobj.loop !== looping)
-				instobj.loop = looping;
-			if (instobj.muted)
-				instobj.muted = false;
-			if (instobj.currentTime !== seekPos)
-			{
-				try {
-					instobj.currentTime = seekPos;
-				}
-				catch (err)
-				{
-;
-				}
-			}
-			if (this.is_music && isMusicWorkaround && !audRuntime.isInUserInputEvent)
-				musicPlayNextTouch.push(this);
-			else
-			{
-				try {
-					this.instanceObject.play();
-				}
-				catch (e) {}	// sometimes throws on WP8.1... try not to kill the app
-			}
-			break;
-		case API_WEBAUDIO:
-			this.muted = false;
-			this.mutevol = 1;
-			if (this.buffer.myapi === API_WEBAUDIO)
-			{
-				if (!this.fresh)
-				{
-					this.instanceObject = context["createBufferSource"]();
-					this.instanceObject["buffer"] = this.buffer.bufferObject;
-					this.instanceObject["connect"](this.gainNode);
-				}
-				this.instanceObject.loop = looping;
-				this.gainNode["gain"]["value"] = vol * masterVolume;
-				if (seekPos === 0)
-					startSource(this.instanceObject);
-				else
-					startSourceAt(this.instanceObject, seekPos, this.getDuration());
-			}
-			else
-			{
-				if (instobj.playbackRate !== 1.0)
-					instobj.playbackRate = 1.0;
-				if (instobj.loop !== looping)
-					instobj.loop = looping;
-				this.gainNode["gain"]["value"] = vol * masterVolume;
-				if (instobj.currentTime !== seekPos)
-				{
-					try {
-						instobj.currentTime = seekPos;
-					}
-					catch (err)
-					{
-;
-					}
-				}
-				if (this.is_music && isMusicWorkaround && !audRuntime.isInUserInputEvent)
-					musicPlayNextTouch.push(this);
-				else
-					instobj.play();
-			}
-			break;
-		case API_PHONEGAP:
-			if ((!this.fresh && this.stopped) || seekPos !== 0)
-				instobj["seekTo"](seekPos);
-			instobj["play"]();
-			this.pgended = false;
-			break;
-		case API_APPMOBI:
-			if (audRuntime.isDirectCanvas)
-				AppMobi["context"]["playSound"](this.src, looping);
-			else
-				AppMobi["player"]["playSound"](this.src, looping);
-			break;
-		}
-		this.playbackRate = 1;
-		this.startTime = audRuntime.kahanTime.sum - seekPos;
-		this.fresh = false;
-		this.stopped = false;
-		this.is_paused = false;
-	};
-	C2AudioInstance.prototype.stop = function ()
-	{
-		switch (this.myapi) {
-		case API_HTML5:
-			if (!this.instanceObject.paused)
-				this.instanceObject.pause();
-			break;
-		case API_WEBAUDIO:
-			if (this.buffer.myapi === API_WEBAUDIO)
-				stopSource(this.instanceObject);
-			else
-			{
-				if (!this.instanceObject.paused)
-					this.instanceObject.pause();
-			}
-			break;
-		case API_PHONEGAP:
-			this.instanceObject["stop"]();
-			break;
-		case API_APPMOBI:
-			if (audRuntime.isDirectCanvas)
-				AppMobi["context"]["stopSound"](this.src);
-			break;
-		}
-		this.stopped = true;
-		this.is_paused = false;
-	};
-	C2AudioInstance.prototype.pause = function ()
-	{
-		if (this.fresh || this.stopped || this.hasEnded() || this.is_paused)
-			return;
-		switch (this.myapi) {
-		case API_HTML5:
-			if (!this.instanceObject.paused)
-				this.instanceObject.pause();
-			break;
-		case API_WEBAUDIO:
-			if (this.buffer.myapi === API_WEBAUDIO)
-			{
-				this.resume_position = this.getPlaybackTime();
-				if (this.looping)
-					this.resume_position = this.resume_position % this.getDuration();
-				stopSource(this.instanceObject);
-			}
-			else
-			{
-				if (!this.instanceObject.paused)
-					this.instanceObject.pause();
-			}
-			break;
-		case API_PHONEGAP:
-			this.instanceObject["pause"]();
-			break;
-		case API_APPMOBI:
-			if (audRuntime.isDirectCanvas)
-				AppMobi["context"]["stopSound"](this.src);
-			break;
-		}
-		this.is_paused = true;
-	};
-	C2AudioInstance.prototype.resume = function ()
-	{
-		if (this.fresh || this.stopped || this.hasEnded() || !this.is_paused)
-			return;
-		switch (this.myapi) {
-		case API_HTML5:
-			this.instanceObject.play();
-			break;
-		case API_WEBAUDIO:
-			if (this.buffer.myapi === API_WEBAUDIO)
-			{
-				this.instanceObject = context["createBufferSource"]();
-				this.instanceObject["buffer"] = this.buffer.bufferObject;
-				this.instanceObject["connect"](this.gainNode);
-				this.instanceObject.loop = this.looping;
-				this.gainNode["gain"]["value"] = masterVolume * this.volume * this.mutevol;
-				this.startTime = audRuntime.kahanTime.sum - this.resume_position;
-				startSourceAt(this.instanceObject, this.resume_position, this.getDuration());
-			}
-			else
-			{
-				this.instanceObject.play();
-			}
-			break;
-		case API_PHONEGAP:
-			this.instanceObject["play"]();
-			break;
-		case API_APPMOBI:
-			if (audRuntime.isDirectCanvas)
-				AppMobi["context"]["resumeSound"](this.src);
-			break;
-		}
-		this.is_paused = false;
-	};
-	C2AudioInstance.prototype.seek = function (pos)
-	{
-		if (this.fresh || this.stopped || this.hasEnded())
-			return;
-		switch (this.myapi) {
-		case API_HTML5:
-			try {
-				this.instanceObject.currentTime = pos;
-			}
-			catch (e) {}
-			break;
-		case API_WEBAUDIO:
-			if (this.buffer.myapi === API_WEBAUDIO)
-			{
-				if (this.is_paused)
-					this.resume_position = pos;
-				else
-				{
-					this.pause();
-					this.resume_position = pos;
-					this.resume();
-				}
-			}
-			else
-			{
-				try {
-					this.instanceObject.currentTime = pos;
-				}
-				catch (e) {}
-			}
-			break;
-		case API_PHONEGAP:
-			break;
-		case API_APPMOBI:
-			if (audRuntime.isDirectCanvas)
-				AppMobi["context"]["seekSound"](this.src, pos);
-			break;
-		}
-	};
-	C2AudioInstance.prototype.reconnect = function (toNode)
-	{
-		if (this.myapi !== API_WEBAUDIO)
-			return;
-		if (this.pannerEnabled)
-		{
-			this.pannerNode["disconnect"]();
-			this.pannerNode["connect"](toNode);
-		}
-		else
-		{
-			this.gainNode["disconnect"]();
-			this.gainNode["connect"](toNode);
-		}
-	};
-	C2AudioInstance.prototype.getDuration = function ()
-	{
-		switch (this.myapi) {
-		case API_HTML5:
-			if (typeof this.instanceObject.duration !== "undefined")
-				return this.instanceObject.duration;
-			else
-				return 0;
-		case API_WEBAUDIO:
-			return this.buffer.bufferObject["duration"];
-		case API_PHONEGAP:
-			return this.instanceObject["getDuration"]();
-		case API_APPMOBI:
-			if (audRuntime.isDirectCanvas)
-				return AppMobi["context"]["getDurationSound"](this.src);
-			else
-				return 0;
-		}
-		return 0;
-	};
-	C2AudioInstance.prototype.getPlaybackTime = function ()
-	{
-		var duration = this.getDuration();
-		var ret = 0;
-		switch (this.myapi) {
-		case API_HTML5:
-			if (typeof this.instanceObject.currentTime !== "undefined")
-				ret = this.instanceObject.currentTime;
-			break;
-		case API_WEBAUDIO:
-			if (this.buffer.myapi === API_WEBAUDIO)
-			{
-				if (this.is_paused)
-					return this.resume_position;
-				else
-					ret = audRuntime.kahanTime.sum - this.startTime;
-			}
-			else if (typeof this.instanceObject.currentTime !== "undefined")
-				ret = this.instanceObject.currentTime;
-			break;
-		case API_PHONEGAP:
-			break;
-		case API_APPMOBI:
-			if (audRuntime.isDirectCanvas)
-				ret = AppMobi["context"]["getPlaybackTimeSound"](this.src);
-			break;
-		}
-		if (!this.looping && ret > duration)
-			ret = duration;
-		return ret;
-	};
-	C2AudioInstance.prototype.isPlaying = function ()
-	{
-		return !this.is_paused && !this.fresh && !this.stopped && !this.hasEnded();
-	};
-	C2AudioInstance.prototype.setVolume = function (v)
-	{
-		this.volume = v;
-		this.updateVolume();
-	};
-	C2AudioInstance.prototype.updateVolume = function ()
-	{
-		var volToSet = this.volume * masterVolume;
-		switch (this.myapi) {
-		case API_HTML5:
-			if (this.instanceObject.volume && this.instanceObject.volume !== volToSet)
-				this.instanceObject.volume = volToSet;
-			break;
-		case API_WEBAUDIO:
-			this.gainNode["gain"]["value"] = volToSet * this.mutevol;
-			break;
-		case API_PHONEGAP:
-			break;
-		case API_APPMOBI:
-			break;
-		}
-	};
-	C2AudioInstance.prototype.getVolume = function ()
-	{
-		return this.volume;
-	};
-	C2AudioInstance.prototype.doSetMuted = function (m)
-	{
-		switch (this.myapi) {
-		case API_HTML5:
-			if (this.instanceObject.muted !== !!m)
-				this.instanceObject.muted = !!m;
-			break;
-		case API_WEBAUDIO:
-			this.mutevol = (m ? 0 : 1);
-			this.gainNode["gain"]["value"] = masterVolume * this.volume * this.mutevol;
-			break;
-		case API_PHONEGAP:
-			break;
-		case API_APPMOBI:
-			break;
-		}
-	};
-	C2AudioInstance.prototype.setMuted = function (m)
-	{
-		this.is_muted = !!m;
-		this.doSetMuted(this.is_muted || this.is_silent);
-	};
-	C2AudioInstance.prototype.setSilent = function (m)
-	{
-		this.is_silent = !!m;
-		this.doSetMuted(this.is_muted || this.is_silent);
-	};
-	C2AudioInstance.prototype.setLooping = function (l)
-	{
-		this.looping = l;
-		switch (this.myapi) {
-		case API_HTML5:
-			if (this.instanceObject.loop !== !!l)
-				this.instanceObject.loop = !!l;
-			break;
-		case API_WEBAUDIO:
-			if (this.instanceObject.loop !== !!l)
-				this.instanceObject.loop = !!l;
-			break;
-		case API_PHONEGAP:
-			break;
-		case API_APPMOBI:
-			if (audRuntime.isDirectCanvas)
-				AppMobi["context"]["setLoopingSound"](this.src, l);
-			break;
-		}
-	};
-	C2AudioInstance.prototype.setPlaybackRate = function (r)
-	{
-		this.playbackRate = r;
-		this.updatePlaybackRate();
-	};
-	C2AudioInstance.prototype.updatePlaybackRate = function ()
-	{
-		var r = this.playbackRate;
-		if ((timescale_mode === 1 && !this.is_music) || timescale_mode === 2)
-			r *= audRuntime.timescale;
-		switch (this.myapi) {
-		case API_HTML5:
-			if (this.instanceObject.playbackRate !== r)
-				this.instanceObject.playbackRate = r;
-			break;
-		case API_WEBAUDIO:
-			if (this.buffer.myapi === API_WEBAUDIO)
-			{
-				if (this.instanceObject["playbackRate"]["value"] !== r)
-					this.instanceObject["playbackRate"]["value"] = r;
-			}
-			else
-			{
-				if (this.instanceObject.playbackRate !== r)
-					this.instanceObject.playbackRate = r;
-			}
-			break;
-		case API_PHONEGAP:
-			break;
-		case API_APPMOBI:
-			break;
-		}
-	};
-	C2AudioInstance.prototype.setSuspended = function (s)
-	{
-		switch (this.myapi) {
-		case API_HTML5:
-			if (s)
-			{
-				if (this.isPlaying())
-				{
-					this.instanceObject["pause"]();
-					this.resume_me = true;
-				}
-				else
-					this.resume_me = false;
-			}
-			else
-			{
-				if (this.resume_me)
-					this.instanceObject["play"]();
-			}
-			break;
-		case API_WEBAUDIO:
-			if (s)
-			{
-				if (this.isPlaying())
-				{
-					if (this.buffer.myapi === API_WEBAUDIO)
-					{
-						this.resume_position = this.getPlaybackTime();
-						if (this.looping)
-							this.resume_position = this.resume_position % this.getDuration();
-						stopSource(this.instanceObject);
-					}
-					else
-						this.instanceObject["pause"]();
-					this.resume_me = true;
-				}
-				else
-					this.resume_me = false;
-			}
-			else
-			{
-				if (this.resume_me)
-				{
-					if (this.buffer.myapi === API_WEBAUDIO)
-					{
-						this.instanceObject = context["createBufferSource"]();
-						this.instanceObject["buffer"] = this.buffer.bufferObject;
-						this.instanceObject["connect"](this.gainNode);
-						this.instanceObject.loop = this.looping;
-						this.gainNode["gain"]["value"] = masterVolume * this.volume * this.mutevol;
-						this.startTime = audRuntime.kahanTime.sum - this.resume_position;
-						startSourceAt(this.instanceObject, this.resume_position, this.getDuration());
-					}
-					else
-					{
-						this.instanceObject["play"]();
-					}
-				}
-			}
-			break;
-		case API_PHONEGAP:
-			if (s)
-			{
-				if (this.isPlaying())
-				{
-					this.instanceObject["pause"]();
-					this.resume_me = true;
-				}
-				else
-					this.resume_me = false;
-			}
-			else
-			{
-				if (this.resume_me)
-					this.instanceObject["play"]();
-			}
-			break;
-		case API_APPMOBI:
-			break;
-		}
-	};
-	pluginProto.Instance = function(type)
-	{
-		this.type = type;
-		this.runtime = type.runtime;
-		audRuntime = this.runtime;
-		audInst = this;
-		this.listenerTracker = null;
-		this.listenerZ = -600;
-		if ((this.runtime.isiOS || (this.runtime.isAndroid && (this.runtime.isChrome || this.runtime.isAndroidStockBrowser))) && !this.runtime.isCrosswalk && !this.runtime.isDomFree)
-		{
-			isMusicWorkaround = true;
-		}
-		context = null;
-		if (typeof AudioContext !== "undefined")
-		{
-			api = API_WEBAUDIO;
-			context = new AudioContext();
-		}
-		else if (typeof webkitAudioContext !== "undefined")
-		{
-			api = API_WEBAUDIO;
-			context = new webkitAudioContext();
-		}
-		if ((this.runtime.isiOS && api === API_WEBAUDIO) || isMusicWorkaround)
-		{
-			document.addEventListener("touchstart", function ()
-			{
-				var i, len, m;
-				if (!iOShadtouch && context)
-				{
-					var buffer = context["createBuffer"](1, 1, 22050);
-					var source = context["createBufferSource"]();
-					source["buffer"] = buffer;
-					source["connect"](context["destination"]);
-					startSource(source);
-					iOShadtouch = true;
-				}
-				if (isMusicWorkaround)
-				{
-					if (!silent)
-					{
-						for (i = 0, len = musicPlayNextTouch.length; i < len; ++i)
-						{
-							m = musicPlayNextTouch[i];
-							if (!m.stopped && !m.is_paused)
-								m.instanceObject.play();
-						}
-					}
-					musicPlayNextTouch.length = 0;
-				}
-			}, true);
-		}
-		if (api !== API_WEBAUDIO)
-		{
-			if (this.runtime.isPhoneGap && typeof window["Media"] !== "undefined")
-				api = API_PHONEGAP;
-			else if (this.runtime.isAppMobi)
-				api = API_APPMOBI;
-		}
-		if (api === API_PHONEGAP)
-		{
-			appPath = location.href;
-			var i = appPath.lastIndexOf("/");
-			if (i > -1)
-				appPath = appPath.substr(0, i + 1);
-			appPath = appPath.replace("file://", "");
-		}
-		if (this.runtime.isSafari && this.runtime.isWindows && typeof Audio === "undefined")
-		{
-			alert("It looks like you're using Safari for Windows without Quicktime.  Audio cannot be played until Quicktime is installed.");
-			this.runtime.DestroyInstance(this);
-		}
-		else
-		{
-			if (this.runtime.isDirectCanvas)
-				useOgg = this.runtime.isAndroid;		// AAC on iOS, OGG on Android
-			else
-			{
-				try {
-					useOgg = !!(new Audio().canPlayType('audio/ogg; codecs="vorbis"'));
-				}
-				catch (e)
-				{
-					useOgg = false;
-				}
-			}
-			switch (api) {
-			case API_HTML5:
-;
-				break;
-			case API_WEBAUDIO:
-;
-				break;
-			case API_PHONEGAP:
-;
-				break;
-			case API_APPMOBI:
-;
-				break;
-			default:
-;
-			}
-			this.runtime.tickMe(this);
-		}
-	};
-	var instanceProto = pluginProto.Instance.prototype;
-	instanceProto.onCreate = function ()
-	{
-		this.runtime.audioInstance = this;
-		timescale_mode = this.properties[0];	// 0 = off, 1 = sounds only, 2 = all
-		this.saveload = this.properties[1];		// 0 = all, 1 = sounds only, 2 = music only, 3 = none
-		panningModel = this.properties[2];		// 0 = equalpower, 1 = hrtf, 3 = soundfield
-		distanceModel = this.properties[3];		// 0 = linear, 1 = inverse, 2 = exponential
-		this.listenerZ = -this.properties[4];
-		refDistance = this.properties[5];
-		maxDistance = this.properties[6];
-		rolloffFactor = this.properties[7];
-		this.listenerTracker = new ObjectTracker();
-		if (api === API_WEBAUDIO)
-		{
-			context["listener"]["speedOfSound"] = this.properties[8];
-			context["listener"]["dopplerFactor"] = this.properties[9];
-			context["listener"]["setPosition"](this.runtime.draw_width / 2, this.runtime.draw_height / 2, this.listenerZ);
-			context["listener"]["setOrientation"](0, 0, 1, 0, -1, 0);
-			window["c2OnAudioMicStream"] = function (localMediaStream, tag)
-			{
-				if (micSource)
-					micSource["disconnect"]();
-				micTag = tag.toLowerCase();
-				micSource = context["createMediaStreamSource"](localMediaStream);
-				micSource["connect"](getDestinationForTag(micTag));
-			};
-		}
-		this.runtime.addSuspendCallback(function(s)
-		{
-			audInst.onSuspend(s);
-		});
-		var self = this;
-		this.runtime.addDestroyCallback(function (inst)
-		{
-			self.onInstanceDestroyed(inst);
-		});
-	};
-	instanceProto.onInstanceDestroyed = function (inst)
-	{
-		var i, len, a;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-		{
-			a = audioInstances[i];
-			if (a.objectTracker)
-			{
-				if (a.objectTracker.obj === inst)
-				{
-					a.objectTracker.obj = null;
-					if (a.pannerEnabled && a.isPlaying() && a.looping)
-						a.stop();
-				}
-			}
-		}
-		if (this.listenerTracker.obj === inst)
-			this.listenerTracker.obj = null;
-	};
-	instanceProto.saveToJSON = function ()
-	{
-		var o = {
-			"silent": silent,
-			"masterVolume": masterVolume,
-			"listenerZ": this.listenerZ,
-			"listenerUid": this.listenerTracker.hasObject() ? this.listenerTracker.obj.uid : -1,
-			"playing": [],
-			"effects": {}
-		};
-		var playingarr = o["playing"];
-		var i, len, a, d, p, panobj, playbackTime;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-		{
-			a = audioInstances[i];
-			if (!a.isPlaying())
-				continue;				// no need to save stopped sounds
-			if (this.saveload === 3)	// not saving/loading any sounds/music
-				continue;
-			if (a.is_music && this.saveload === 1)	// not saving/loading music
-				continue;
-			if (!a.is_music && this.saveload === 2)	// not saving/loading sound
-				continue;
-			playbackTime = a.getPlaybackTime();
-			if (a.looping)
-				playbackTime = playbackTime % a.getDuration();
-			d = {
-				"tag": a.tag,
-				"buffersrc": a.buffer.src,
-				"is_music": a.is_music,
-				"playbackTime": playbackTime,
-				"volume": a.volume,
-				"looping": a.looping,
-				"muted": a.is_muted,
-				"playbackRate": a.playbackRate,
-				"paused": a.is_paused,
-				"resume_position": a.resume_position
-			};
-			if (a.pannerEnabled)
-			{
-				d["pan"] = {};
-				panobj = d["pan"];
-				if (a.objectTracker && a.objectTracker.hasObject())
-				{
-					panobj["objUid"] = a.objectTracker.obj.uid;
-				}
-				else
-				{
-					panobj["x"] = a.panX;
-					panobj["y"] = a.panY;
-					panobj["a"] = a.panAngle;
-				}
-				panobj["ia"] = a.panConeInner;
-				panobj["oa"] = a.panConeOuter;
-				panobj["og"] = a.panConeOuterGain;
-			}
-			playingarr.push(d);
-		}
-		var fxobj = o["effects"];
-		var fxarr;
-		for (p in effects)
-		{
-			if (effects.hasOwnProperty(p))
-			{
-				fxarr = [];
-				for (i = 0, len = effects[p].length; i < len; i++)
-				{
-					fxarr.push({ "type": effects[p][i].type, "params": effects[p][i].params });
-				}
-				fxobj[p] = fxarr;
-			}
-		}
-		return o;
-	};
-	var objectTrackerUidsToLoad = [];
-	instanceProto.loadFromJSON = function (o)
-	{
-		var setSilent = o["silent"];
-		masterVolume = o["masterVolume"];
-		this.listenerZ = o["listenerZ"];
-		this.listenerTracker.setObject(null);
-		var listenerUid = o["listenerUid"];
-		if (listenerUid !== -1)
-		{
-			this.listenerTracker.loadUid = listenerUid;
-			objectTrackerUidsToLoad.push(this.listenerTracker);
-		}
-		var playingarr = o["playing"];
-		var i, len, d, src, is_music, tag, playbackTime, looping, vol, b, a, p, pan, panObjUid;
-		if (this.saveload !== 3)
-		{
-			for (i = 0, len = audioInstances.length; i < len; i++)
-			{
-				a = audioInstances[i];
-				if (a.is_music && this.saveload === 1)
-					continue;		// only saving/loading sound: leave music playing
-				if (!a.is_music && this.saveload === 2)
-					continue;		// only saving/loading music: leave sound playing
-				a.stop();
-			}
-		}
-		var fxarr, fxtype, fxparams, fx;
-		for (p in effects)
-		{
-			if (effects.hasOwnProperty(p))
-			{
-				for (i = 0, len = effects[p].length; i < len; i++)
-					effects[p][i].remove();
-			}
-		}
-		cr.wipe(effects);
-		for (p in o["effects"])
-		{
-			if (o["effects"].hasOwnProperty(p))
-			{
-				fxarr = o["effects"][p];
-				for (i = 0, len = fxarr.length; i < len; i++)
-				{
-					fxtype = fxarr[i]["type"];
-					fxparams = fxarr[i]["params"];
-					switch (fxtype) {
-					case "filter":
-						addEffectForTag(p, new FilterEffect(fxparams[0], fxparams[1], fxparams[2], fxparams[3], fxparams[4], fxparams[5]));
-						break;
-					case "delay":
-						addEffectForTag(p, new DelayEffect(fxparams[0], fxparams[1], fxparams[2]));
-						break;
-					case "convolve":
-						src = fxparams[2];
-						b = this.getAudioBuffer(src, false);
-						if (b.bufferObject)
-						{
-							fx = new ConvolveEffect(b.bufferObject, fxparams[0], fxparams[1], src);
-						}
-						else
-						{
-							fx = new ConvolveEffect(null, fxparams[0], fxparams[1], src);
-							b.normalizeWhenReady = fxparams[0];
-							b.convolveWhenReady = fx;
-						}
-						addEffectForTag(p, fx);
-						break;
-					case "flanger":
-						addEffectForTag(p, new FlangerEffect(fxparams[0], fxparams[1], fxparams[2], fxparams[3], fxparams[4]));
-						break;
-					case "phaser":
-						addEffectForTag(p, new PhaserEffect(fxparams[0], fxparams[1], fxparams[2], fxparams[3], fxparams[4], fxparams[5]));
-						break;
-					case "gain":
-						addEffectForTag(p, new GainEffect(fxparams[0]));
-						break;
-					case "tremolo":
-						addEffectForTag(p, new TremoloEffect(fxparams[0], fxparams[1]));
-						break;
-					case "ringmod":
-						addEffectForTag(p, new RingModulatorEffect(fxparams[0], fxparams[1]));
-						break;
-					case "distortion":
-						addEffectForTag(p, new DistortionEffect(fxparams[0], fxparams[1], fxparams[2], fxparams[3], fxparams[4]));
-						break;
-					case "compressor":
-						addEffectForTag(p, new CompressorEffect(fxparams[0], fxparams[1], fxparams[2], fxparams[3], fxparams[4]));
-						break;
-					case "analyser":
-						addEffectForTag(p, new AnalyserEffect(fxparams[0], fxparams[1]));
-						break;
-					}
-				}
-			}
-		}
-		for (i = 0, len = playingarr.length; i < len; i++)
-		{
-			if (this.saveload === 3)	// not saving/loading any sounds/music
-				continue;
-			d = playingarr[i];
-			src = d["buffersrc"];
-			is_music = d["is_music"];
-			tag = d["tag"];
-			playbackTime = d["playbackTime"];
-			looping = d["looping"];
-			vol = d["volume"];
-			pan = d["pan"];
-			panObjUid = (pan && pan.hasOwnProperty("objUid")) ? pan["objUid"] : -1;
-			if (is_music && this.saveload === 1)	// not saving/loading music
-				continue;
-			if (!is_music && this.saveload === 2)	// not saving/loading sound
-				continue;
-			a = this.getAudioInstance(src, tag, is_music, looping, vol);
-			if (!a)
-			{
-				b = this.getAudioBuffer(src, is_music);
-				b.seekWhenReady = playbackTime;
-				b.pauseWhenReady = d["paused"];
-				if (pan)
-				{
-					if (panObjUid !== -1)
-					{
-						b.panWhenReady.push({ objUid: panObjUid, ia: pan["ia"], oa: pan["oa"], og: pan["og"], thistag: tag });
-					}
-					else
-					{
-						b.panWhenReady.push({ x: pan["x"], y: pan["y"], a: pan["a"], ia: pan["ia"], oa: pan["oa"], og: pan["og"], thistag: tag });
-					}
-				}
-				continue;
-			}
-			a.resume_position = d["resume_position"];
-			a.setPannerEnabled(!!pan);
-			a.play(looping, vol, playbackTime);
-			a.updatePlaybackRate();
-			a.updateVolume();
-			a.doSetMuted(a.is_muted || a.is_silent);
-			if (d["paused"])
-				a.pause();
-			if (d["muted"])
-				a.setMuted(true);
-			a.doSetMuted(a.is_muted || a.is_silent);
-			if (pan)
-			{
-				if (panObjUid !== -1)
-				{
-					a.objectTracker = a.objectTracker || new ObjectTracker();
-					a.objectTracker.loadUid = panObjUid;
-					objectTrackerUidsToLoad.push(a.objectTracker);
-				}
-				else
-				{
-					a.setPan(pan["x"], pan["y"], pan["a"], pan["ia"], pan["oa"], pan["og"]);
-				}
-			}
-		}
-		if (setSilent && !silent)			// setting silent
-		{
-			for (i = 0, len = audioInstances.length; i < len; i++)
-				audioInstances[i].setSilent(true);
-			silent = true;
-		}
-		else if (!setSilent && silent)		// setting not silent
-		{
-			for (i = 0, len = audioInstances.length; i < len; i++)
-				audioInstances[i].setSilent(false);
-			silent = false;
-		}
-	};
-	instanceProto.afterLoad = function ()
-	{
-		var i, len, ot, inst;
-		for (i = 0, len = objectTrackerUidsToLoad.length; i < len; i++)
-		{
-			ot = objectTrackerUidsToLoad[i];
-			inst = this.runtime.getObjectByUID(ot.loadUid);
-			ot.setObject(inst);
-			ot.loadUid = -1;
-			if (inst)
-			{
-				listenerX = inst.x;
-				listenerY = inst.y;
-			}
-		}
-		objectTrackerUidsToLoad.length = 0;
-	};
-	instanceProto.onSuspend = function (s)
-	{
-		var i, len;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-			audioInstances[i].setSuspended(s);
-	};
-	instanceProto.tick = function ()
-	{
-		var dt = this.runtime.dt;
-		var i, len, a;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-		{
-			a = audioInstances[i];
-			a.tick(dt);
-			if (a.myapi !== API_HTML5 && a.myapi !== API_APPMOBI)
-			{
-				if (!a.fresh && !a.stopped && a.hasEnded())
-				{
-					a.stopped = true;
-					audTag = a.tag;
-					audRuntime.trigger(cr.plugins_.Audio.prototype.cnds.OnEnded, audInst);
-				}
-			}
-			if (timescale_mode !== 0)
-				a.updatePlaybackRate();
-		}
-		var p, arr, f;
-		for (p in effects)
-		{
-			if (effects.hasOwnProperty(p))
-			{
-				arr = effects[p];
-				for (i = 0, len = arr.length; i < len; i++)
-				{
-					f = arr[i];
-					if (f.tick)
-						f.tick();
-				}
-			}
-		}
-		if (api === API_WEBAUDIO && this.listenerTracker.hasObject())
-		{
-			this.listenerTracker.tick(dt);
-			listenerX = this.listenerTracker.obj.x;
-			listenerY = this.listenerTracker.obj.y;
-			context["listener"]["setPosition"](this.listenerTracker.obj.x, this.listenerTracker.obj.y, this.listenerZ);
-			context["listener"]["setVelocity"](this.listenerTracker.getVelocityX(), this.listenerTracker.getVelocityY(), 0);
-		}
-	};
-	var preload_list = [];
-	instanceProto.setPreloadList = function (arr)
-	{
-		var i, len, p, filename, size, isOgg;
-		var total_size = 0;
-		for (i = 0, len = arr.length; i < len; ++i)
-		{
-			p = arr[i];
-			filename = p[0];
-			size = p[1] * 2;
-			isOgg = (filename.length > 4 && filename.substr(filename.length - 4) === ".ogg");
-			if ((isOgg && useOgg) || (!isOgg && !useOgg))
-			{
-				preload_list.push({
-					filename: filename,
-					size: size,
-					obj: null
-				});
-				total_size += size;
-			}
-		}
-		return total_size;
-	};
-	instanceProto.startPreloads = function ()
-	{
-		var i, len, p, src;
-		for (i = 0, len = preload_list.length; i < len; ++i)
-		{
-			p = preload_list[i];
-			src = this.runtime.files_subfolder + p.filename;
-			p.obj = this.getAudioBuffer(src, false);
-		}
-	};
-	instanceProto.getPreloadedSize = function ()
-	{
-		var completed = 0;
-		var i, len, p;
-		for (i = 0, len = preload_list.length; i < len; ++i)
-		{
-			p = preload_list[i];
-			if (p.obj.isLoadedAndDecoded() || p.obj.hasFailedToLoad() || this.runtime.isDomFree)
-				completed += p.size;
-			else if (p.obj.isLoaded())	// downloaded but not decoded: only happens in Web Audio API, count as half-way progress
-				completed += Math.floor(p.size / 2);
-		};
-		return completed;
-	};
-	instanceProto.getAudioBuffer = function (src_, is_music)
-	{
-		var i, len, a, ret = null, j, k, lenj, ai;
-		for (i = 0, len = audioBuffers.length; i < len; i++)
-		{
-			a = audioBuffers[i];
-			if (a.src === src_)
-			{
-				ret = a;
-				break;
-			}
-		}
-		if (!ret)
-		{
-			ret = new C2AudioBuffer(src_, is_music);
-			audioBuffers.push(ret);
-		}
-		return ret;
-	};
-	instanceProto.getAudioInstance = function (src_, tag, is_music, looping, vol)
-	{
-		var i, len, a;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-		{
-			a = audioInstances[i];
-			if (a.src === src_ && (a.canBeRecycled() || is_music))
-			{
-				a.tag = tag;
-				return a;
-			}
-		}
-		var b = this.getAudioBuffer(src_, is_music);
-		if (!b.bufferObject)
-		{
-			if (tag !== "<preload>")
-			{
-				b.playTagWhenReady = tag;
-				b.loopWhenReady = looping;
-				b.volumeWhenReady = vol;
-			}
-			return null;
-		}
-		a = new C2AudioInstance(b, tag);
-		audioInstances.push(a);
-		return a;
-	};
-	var taggedAudio = [];
-	function SortByIsPlaying(a, b)
-	{
-		var an = a.isPlaying() ? 1 : 0;
-		var bn = b.isPlaying() ? 1 : 0;
-		if (an === bn)
-			return 0;
-		else if (an < bn)
-			return 1;
-		else
-			return -1;
-	};
-	function getAudioByTag(tag, sort_by_playing)
-	{
-		taggedAudio.length = 0;
-		if (!tag.length)
-		{
-			if (!lastAudio || lastAudio.hasEnded())
-				return;
-			else
-			{
-				taggedAudio.length = 1;
-				taggedAudio[0] = lastAudio;
-				return;
-			}
-		}
-		var i, len, a;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-		{
-			a = audioInstances[i];
-			if (cr.equals_nocase(tag, a.tag))
-				taggedAudio.push(a);
-		}
-		if (sort_by_playing)
-			taggedAudio.sort(SortByIsPlaying);
-	};
-	function reconnectEffects(tag)
-	{
-		var i, len, arr, n, toNode = context["destination"];
-		if (effects.hasOwnProperty(tag))
-		{
-			arr = effects[tag];
-			if (arr.length)
-			{
-				toNode = arr[0].getInputNode();
-				for (i = 0, len = arr.length; i < len; i++)
-				{
-					n = arr[i];
-					if (i + 1 === len)
-						n.connectTo(context["destination"]);
-					else
-						n.connectTo(arr[i + 1].getInputNode());
-				}
-			}
-		}
-		getAudioByTag(tag);
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-			taggedAudio[i].reconnect(toNode);
-		if (micSource && micTag === tag)
-		{
-			micSource["disconnect"]();
-			micSource["connect"](toNode);
-		}
-	};
-	function addEffectForTag(tag, fx)
-	{
-		if (!effects.hasOwnProperty(tag))
-			effects[tag] = [fx];
-		else
-			effects[tag].push(fx);
-		reconnectEffects(tag);
-	};
-	function Cnds() {};
-	Cnds.prototype.OnEnded = function (t)
-	{
-		return cr.equals_nocase(audTag, t);
-	};
-	Cnds.prototype.PreloadsComplete = function ()
-	{
-		var i, len;
-		for (i = 0, len = audioBuffers.length; i < len; i++)
-		{
-			if (!audioBuffers[i].isLoaded() && !audioBuffers[i].hasFailedToLoad())
-				return false;
-		}
-		return true;
-	};
-	Cnds.prototype.AdvancedAudioSupported = function ()
-	{
-		return api === API_WEBAUDIO;
-	};
-	Cnds.prototype.IsSilent = function ()
-	{
-		return silent;
-	};
-	Cnds.prototype.IsAnyPlaying = function ()
-	{
-		var i, len;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-		{
-			if (audioInstances[i].isPlaying())
-				return true;
-		}
-		return false;
-	};
-	Cnds.prototype.IsTagPlaying = function (tag)
-	{
-		getAudioByTag(tag);
-		var i, len;
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-		{
-			if (taggedAudio[i].isPlaying())
-				return true;
-		}
-		return false;
-	};
-	pluginProto.cnds = new Cnds();
-	function Acts() {};
-	Acts.prototype.Play = function (file, looping, vol, tag)
-	{
-		if (silent)
-			return;
-		var v = dbToLinear(vol);
-		var is_music = file[1];
-		var src = this.runtime.files_subfolder + file[0] + (useOgg ? ".ogg" : ".m4a");
-		lastAudio = this.getAudioInstance(src, tag, is_music, looping!==0, v);
-		if (!lastAudio)
-			return;
-		lastAudio.setPannerEnabled(false);
-		lastAudio.play(looping!==0, v);
-	};
-	Acts.prototype.PlayAtPosition = function (file, looping, vol, x_, y_, angle_, innerangle_, outerangle_, outergain_, tag)
-	{
-		if (silent)
-			return;
-		var v = dbToLinear(vol);
-		var is_music = file[1];
-		var src = this.runtime.files_subfolder + file[0] + (useOgg ? ".ogg" : ".m4a");
-		lastAudio = this.getAudioInstance(src, tag, is_music, looping!==0, v);
-		if (!lastAudio)
-		{
-			var b = this.getAudioBuffer(src, is_music);
-			b.panWhenReady.push({ x: x_, y: y_, a: angle_, ia: innerangle_, oa: outerangle_, og: dbToLinear(outergain_), thistag: tag });
-			return;
-		}
-		lastAudio.setPannerEnabled(true);
-		lastAudio.setPan(x_, y_, angle_, innerangle_, outerangle_, dbToLinear(outergain_));
-		lastAudio.play(looping!==0, v);
-	};
-	Acts.prototype.PlayAtObject = function (file, looping, vol, obj, innerangle, outerangle, outergain, tag)
-	{
-		if (silent || !obj)
-			return;
-		var inst = obj.getFirstPicked();
-		if (!inst)
-			return;
-		var v = dbToLinear(vol);
-		var is_music = file[1];
-		var src = this.runtime.files_subfolder + file[0] + (useOgg ? ".ogg" : ".m4a");
-		lastAudio = this.getAudioInstance(src, tag, is_music, looping!==0, v);
-		if (!lastAudio)
-		{
-			var b = this.getAudioBuffer(src, is_music);
-			b.panWhenReady.push({ obj: inst, ia: innerangle, oa: outerangle, og: dbToLinear(outergain), thistag: tag });
-			return;
-		}
-		lastAudio.setPannerEnabled(true);
-		var px = cr.rotatePtAround(inst.x, inst.y, -inst.layer.getAngle(), listenerX, listenerY, true);
-		var py = cr.rotatePtAround(inst.x, inst.y, -inst.layer.getAngle(), listenerX, listenerY, false);
-		lastAudio.setPan(px, py, cr.to_degrees(inst.angle - inst.layer.getAngle()), innerangle, outerangle, dbToLinear(outergain));
-		lastAudio.setObject(inst);
-		lastAudio.play(looping!==0, v);
-	};
-	Acts.prototype.PlayByName = function (folder, filename, looping, vol, tag)
-	{
-		if (silent)
-			return;
-		var v = dbToLinear(vol);
-		var is_music = (folder === 1);
-		var src = this.runtime.files_subfolder + filename.toLowerCase() + (useOgg ? ".ogg" : ".m4a");
-		lastAudio = this.getAudioInstance(src, tag, is_music, looping!==0, v);
-		if (!lastAudio)
-			return;
-		lastAudio.setPannerEnabled(false);
-		lastAudio.play(looping!==0, v);
-	};
-	Acts.prototype.PlayAtPositionByName = function (folder, filename, looping, vol, x_, y_, angle_, innerangle_, outerangle_, outergain_, tag)
-	{
-		if (silent)
-			return;
-		var v = dbToLinear(vol);
-		var is_music = (folder === 1);
-		var src = this.runtime.files_subfolder + filename.toLowerCase() + (useOgg ? ".ogg" : ".m4a");
-		lastAudio = this.getAudioInstance(src, tag, is_music, looping!==0, v);
-		if (!lastAudio)
-		{
-			var b = this.getAudioBuffer(src, is_music);
-			b.panWhenReady.push({ x: x_, y: y_, a: angle_, ia: innerangle_, oa: outerangle_, og: dbToLinear(outergain_), thistag: tag });
-			return;
-		}
-		lastAudio.setPannerEnabled(true);
-		lastAudio.setPan(x_, y_, angle_, innerangle_, outerangle_, dbToLinear(outergain_));
-		lastAudio.play(looping!==0, v);
-	};
-	Acts.prototype.PlayAtObjectByName = function (folder, filename, looping, vol, obj, innerangle, outerangle, outergain, tag)
-	{
-		if (silent || !obj)
-			return;
-		var inst = obj.getFirstPicked();
-		if (!inst)
-			return;
-		var v = dbToLinear(vol);
-		var is_music = (folder === 1);
-		var src = this.runtime.files_subfolder + filename.toLowerCase() + (useOgg ? ".ogg" : ".m4a");
-		lastAudio = this.getAudioInstance(src, tag, is_music, looping!==0, v);
-		if (!lastAudio)
-		{
-			var b = this.getAudioBuffer(src, is_music);
-			b.panWhenReady.push({ obj: inst, ia: innerangle, oa: outerangle, og: dbToLinear(outergain), thistag: tag });
-			return;
-		}
-		lastAudio.setPannerEnabled(true);
-		var px = cr.rotatePtAround(inst.x, inst.y, -inst.layer.getAngle(), listenerX, listenerY, true);
-		var py = cr.rotatePtAround(inst.x, inst.y, -inst.layer.getAngle(), listenerX, listenerY, false);
-		lastAudio.setPan(px, py, cr.to_degrees(inst.angle - inst.layer.getAngle()), innerangle, outerangle, dbToLinear(outergain));
-		lastAudio.setObject(inst);
-		lastAudio.play(looping!==0, v);
-	};
-	Acts.prototype.SetLooping = function (tag, looping)
-	{
-		getAudioByTag(tag);
-		var i, len;
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-			taggedAudio[i].setLooping(looping === 0);
-	};
-	Acts.prototype.SetMuted = function (tag, muted)
-	{
-		getAudioByTag(tag);
-		var i, len;
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-			taggedAudio[i].setMuted(muted === 0);
-	};
-	Acts.prototype.SetVolume = function (tag, vol)
-	{
-		getAudioByTag(tag);
-		var v = dbToLinear(vol);
-		var i, len;
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-			taggedAudio[i].setVolume(v);
-	};
-	Acts.prototype.Preload = function (file)
-	{
-		if (silent)
-			return;
-		var is_music = file[1];
-		var src = this.runtime.files_subfolder + file[0] + (useOgg ? ".ogg" : ".m4a");
-		if (api === API_APPMOBI)
-		{
-			if (this.runtime.isDirectCanvas)
-				AppMobi["context"]["loadSound"](src);
-			else
-				AppMobi["player"]["loadSound"](src);
-			return;
-		}
-		else if (api === API_PHONEGAP)
-		{
-			return;
-		}
-		this.getAudioInstance(src, "<preload>", is_music, false);
-	};
-	Acts.prototype.PreloadByName = function (folder, filename)
-	{
-		if (silent)
-			return;
-		var is_music = (folder === 1);
-		var src = this.runtime.files_subfolder + filename.toLowerCase() + (useOgg ? ".ogg" : ".m4a");
-		if (api === API_APPMOBI)
-		{
-			if (this.runtime.isDirectCanvas)
-				AppMobi["context"]["loadSound"](src);
-			else
-				AppMobi["player"]["loadSound"](src);
-			return;
-		}
-		else if (api === API_PHONEGAP)
-		{
-			return;
-		}
-		this.getAudioInstance(src, "<preload>", is_music, false);
-	};
-	Acts.prototype.SetPlaybackRate = function (tag, rate)
-	{
-		getAudioByTag(tag);
-		if (rate < 0.0)
-			rate = 0;
-		var i, len;
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-			taggedAudio[i].setPlaybackRate(rate);
-	};
-	Acts.prototype.Stop = function (tag)
-	{
-		getAudioByTag(tag);
-		var i, len;
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-			taggedAudio[i].stop();
-	};
-	Acts.prototype.StopAll = function ()
-	{
-		var i, len;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-			audioInstances[i].stop();
-	};
-	Acts.prototype.SetPaused = function (tag, state)
-	{
-		getAudioByTag(tag);
-		var i, len;
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-		{
-			if (state === 0)
-				taggedAudio[i].pause();
-			else
-				taggedAudio[i].resume();
-		}
-	};
-	Acts.prototype.Seek = function (tag, pos)
-	{
-		getAudioByTag(tag);
-		var i, len;
-		for (i = 0, len = taggedAudio.length; i < len; i++)
-		{
-			taggedAudio[i].seek(pos);
-		}
-	};
-	Acts.prototype.SetSilent = function (s)
-	{
-		var i, len;
-		if (s === 2)					// toggling
-			s = (silent ? 1 : 0);		// choose opposite state
-		if (s === 0 && !silent)			// setting silent
-		{
-			for (i = 0, len = audioInstances.length; i < len; i++)
-				audioInstances[i].setSilent(true);
-			silent = true;
-		}
-		else if (s === 1 && silent)		// setting not silent
-		{
-			for (i = 0, len = audioInstances.length; i < len; i++)
-				audioInstances[i].setSilent(false);
-			silent = false;
-		}
-	};
-	Acts.prototype.SetMasterVolume = function (vol)
-	{
-		masterVolume = dbToLinear(vol);
-		var i, len;
-		for (i = 0, len = audioInstances.length; i < len; i++)
-			audioInstances[i].updateVolume();
-	};
-	Acts.prototype.AddFilterEffect = function (tag, type, freq, detune, q, gain, mix)
-	{
-		if (api !== API_WEBAUDIO || type < 0 || type >= filterTypes.length || !context["createBiquadFilter"])
-			return;
-		tag = tag.toLowerCase();
-		mix = mix / 100;
-		if (mix < 0) mix = 0;
-		if (mix > 1) mix = 1;
-		addEffectForTag(tag, new FilterEffect(type, freq, detune, q, gain, mix));
-	};
-	Acts.prototype.AddDelayEffect = function (tag, delay, gain, mix)
-	{
-		if (api !== API_WEBAUDIO)
-			return;
-		tag = tag.toLowerCase();
-		mix = mix / 100;
-		if (mix < 0) mix = 0;
-		if (mix > 1) mix = 1;
-		addEffectForTag(tag, new DelayEffect(delay, dbToLinear(gain), mix));
-	};
-	Acts.prototype.AddFlangerEffect = function (tag, delay, modulation, freq, feedback, mix)
-	{
-		if (api !== API_WEBAUDIO || !context["createOscillator"])
-			return;
-		tag = tag.toLowerCase();
-		mix = mix / 100;
-		if (mix < 0) mix = 0;
-		if (mix > 1) mix = 1;
-		addEffectForTag(tag, new FlangerEffect(delay / 1000, modulation / 1000, freq, feedback / 100, mix));
-	};
-	Acts.prototype.AddPhaserEffect = function (tag, freq, detune, q, mod, modfreq, mix)
-	{
-		if (api !== API_WEBAUDIO || !context["createOscillator"])
-			return;
-		tag = tag.toLowerCase();
-		mix = mix / 100;
-		if (mix < 0) mix = 0;
-		if (mix > 1) mix = 1;
-		addEffectForTag(tag, new PhaserEffect(freq, detune, q, mod, modfreq, mix));
-	};
-	Acts.prototype.AddConvolutionEffect = function (tag, file, norm, mix)
-	{
-		if (api !== API_WEBAUDIO || !context["createConvolver"])
-			return;
-		var doNormalize = (norm === 0);
-		var src = this.runtime.files_subfolder + file[0] + (useOgg ? ".ogg" : ".m4a");
-		var b = this.getAudioBuffer(src, false);
-		tag = tag.toLowerCase();
-		mix = mix / 100;
-		if (mix < 0) mix = 0;
-		if (mix > 1) mix = 1;
-		var fx;
-		if (b.bufferObject)
-		{
-			fx = new ConvolveEffect(b.bufferObject, doNormalize, mix, src);
-		}
-		else
-		{
-			fx = new ConvolveEffect(null, doNormalize, mix, src);
-			b.normalizeWhenReady = doNormalize;
-			b.convolveWhenReady = fx;
-		}
-		addEffectForTag(tag, fx);
-	};
-	Acts.prototype.AddGainEffect = function (tag, g)
-	{
-		if (api !== API_WEBAUDIO)
-			return;
-		tag = tag.toLowerCase();
-		addEffectForTag(tag, new GainEffect(dbToLinear(g)));
-	};
-	Acts.prototype.AddMuteEffect = function (tag)
-	{
-		if (api !== API_WEBAUDIO)
-			return;
-		tag = tag.toLowerCase();
-		addEffectForTag(tag, new GainEffect(0));	// re-use gain effect with 0 gain
-	};
-	Acts.prototype.AddTremoloEffect = function (tag, freq, mix)
-	{
-		if (api !== API_WEBAUDIO || !context["createOscillator"])
-			return;
-		tag = tag.toLowerCase();
-		mix = mix / 100;
-		if (mix < 0) mix = 0;
-		if (mix > 1) mix = 1;
-		addEffectForTag(tag, new TremoloEffect(freq, mix));
-	};
-	Acts.prototype.AddRingModEffect = function (tag, freq, mix)
-	{
-		if (api !== API_WEBAUDIO || !context["createOscillator"])
-			return;
-		tag = tag.toLowerCase();
-		mix = mix / 100;
-		if (mix < 0) mix = 0;
-		if (mix > 1) mix = 1;
-		addEffectForTag(tag, new RingModulatorEffect(freq, mix));
-	};
-	Acts.prototype.AddDistortionEffect = function (tag, threshold, headroom, drive, makeupgain, mix)
-	{
-		if (api !== API_WEBAUDIO || !context["createWaveShaper"])
-			return;
-		tag = tag.toLowerCase();
-		mix = mix / 100;
-		if (mix < 0) mix = 0;
-		if (mix > 1) mix = 1;
-		addEffectForTag(tag, new DistortionEffect(threshold, headroom, drive, makeupgain, mix));
-	};
-	Acts.prototype.AddCompressorEffect = function (tag, threshold, knee, ratio, attack, release)
-	{
-		if (api !== API_WEBAUDIO || !context["createDynamicsCompressor"])
-			return;
-		tag = tag.toLowerCase();
-		addEffectForTag(tag, new CompressorEffect(threshold, knee, ratio, attack / 1000, release / 1000));
-	};
-	Acts.prototype.AddAnalyserEffect = function (tag, fftSize, smoothing)
-	{
-		if (api !== API_WEBAUDIO)
-			return;
-		tag = tag.toLowerCase();
-		addEffectForTag(tag, new AnalyserEffect(fftSize, smoothing));
-	};
-	Acts.prototype.RemoveEffects = function (tag)
-	{
-		if (api !== API_WEBAUDIO)
-			return;
-		tag = tag.toLowerCase();
-		var i, len, arr;
-		if (effects.hasOwnProperty(tag))
-		{
-			arr = effects[tag];
-			if (arr.length)
-			{
-				for (i = 0, len = arr.length; i < len; i++)
-					arr[i].remove();
-				arr.length = 0;
-				reconnectEffects(tag);
-			}
-		}
-	};
-	Acts.prototype.SetEffectParameter = function (tag, index, param, value, ramp, time)
-	{
-		if (api !== API_WEBAUDIO)
-			return;
-		tag = tag.toLowerCase();
-		index = Math.floor(index);
-		var arr;
-		if (!effects.hasOwnProperty(tag))
-			return;
-		arr = effects[tag];
-		if (index < 0 || index >= arr.length)
-			return;
-		arr[index].setParam(param, value, ramp, time);
-	};
-	Acts.prototype.SetListenerObject = function (obj_)
-	{
-		if (!obj_ || api !== API_WEBAUDIO)
-			return;
-		var inst = obj_.getFirstPicked();
-		if (!inst)
-			return;
-		this.listenerTracker.setObject(inst);
-		listenerX = inst.x;
-		listenerY = inst.y;
-	};
-	Acts.prototype.SetListenerZ = function (z)
-	{
-		this.listenerZ = z;
-	};
-	pluginProto.acts = new Acts();
-	function Exps() {};
-	Exps.prototype.Duration = function (ret, tag)
-	{
-		getAudioByTag(tag, true);
-		if (taggedAudio.length)
-			ret.set_float(taggedAudio[0].getDuration());
-		else
-			ret.set_float(0);
-	};
-	Exps.prototype.PlaybackTime = function (ret, tag)
-	{
-		getAudioByTag(tag, true);
-		if (taggedAudio.length)
-			ret.set_float(taggedAudio[0].getPlaybackTime());
-		else
-			ret.set_float(0);
-	};
-	Exps.prototype.Volume = function (ret, tag)
-	{
-		getAudioByTag(tag, true);
-		if (taggedAudio.length)
-		{
-			var v = taggedAudio[0].getVolume();
-			ret.set_float(linearToDb(v));
-		}
-		else
-			ret.set_float(0);
-	};
-	Exps.prototype.MasterVolume = function (ret)
-	{
-		ret.set_float(masterVolume);
-	};
-	Exps.prototype.EffectCount = function (ret, tag)
-	{
-		tag = tag.toLowerCase();
-		var arr = null;
-		if (effects.hasOwnProperty(tag))
-			arr = effects[tag];
-		ret.set_int(arr ? arr.length : 0);
-	};
-	function getAnalyser(tag, index)
-	{
-		var arr = null;
-		if (effects.hasOwnProperty(tag))
-			arr = effects[tag];
-		if (arr && index >= 0 && index < arr.length && arr[index].freqBins)
-			return arr[index];
-		else
-			return null;
-	};
-	Exps.prototype.AnalyserFreqBinCount = function (ret, tag, index)
-	{
-		tag = tag.toLowerCase();
-		index = Math.floor(index);
-		var analyser = getAnalyser(tag, index);
-		ret.set_int(analyser ? analyser.node["frequencyBinCount"] : 0);
-	};
-	Exps.prototype.AnalyserFreqBinAt = function (ret, tag, index, bin)
-	{
-		tag = tag.toLowerCase();
-		index = Math.floor(index);
-		bin = Math.floor(bin);
-		var analyser = getAnalyser(tag, index);
-		if (!analyser)
-			ret.set_float(0);
-		else if (bin < 0 || bin >= analyser.node["frequencyBinCount"])
-			ret.set_float(0);
-		else
-			ret.set_float(analyser.freqBins[bin]);
-	};
-	Exps.prototype.AnalyserPeakLevel = function (ret, tag, index)
-	{
-		tag = tag.toLowerCase();
-		index = Math.floor(index);
-		var analyser = getAnalyser(tag, index);
-		if (analyser)
-			ret.set_float(analyser.peak);
-		else
-			ret.set_float(0);
-	};
-	Exps.prototype.AnalyserRMSLevel = function (ret, tag, index)
-	{
-		tag = tag.toLowerCase();
-		index = Math.floor(index);
-		var analyser = getAnalyser(tag, index);
-		if (analyser)
-			ret.set_float(analyser.rms);
-		else
-			ret.set_float(0);
-	};
-	pluginProto.exps = new Exps();
-}());
-;
-;
-cr.plugins_.Particles = function(runtime)
-{
-	this.runtime = runtime;
-};
-(function ()
-{
-	var pluginProto = cr.plugins_.Particles.prototype;
-	pluginProto.Type = function(plugin)
-	{
-		this.plugin = plugin;
-		this.runtime = plugin.runtime;
-	};
-	var typeProto = pluginProto.Type.prototype;
-	typeProto.onCreate = function()
-	{
-		if (this.is_family)
-			return;
-		this.texture_img = new Image();
-		this.texture_img["idtkLoadDisposed"] = true;
-		this.texture_img.src = this.texture_file;
-		this.texture_img.cr_filesize = this.texture_filesize;
-		this.webGL_texture = null;
-		this.runtime.waitForImageLoad(this.texture_img);
-	};
-	typeProto.onLostWebGLContext = function ()
-	{
-		if (this.is_family)
-			return;
-		this.webGL_texture = null;
-	};
-	typeProto.onRestoreWebGLContext = function ()
-	{
-		if (this.is_family || !this.instances.length)
-			return;
-		if (!this.webGL_texture)
-		{
-			this.webGL_texture = this.runtime.glwrap.loadTexture(this.texture_img, true, this.runtime.linearSampling, this.texture_pixelformat);
-		}
-	};
-	typeProto.loadTextures = function ()
-	{
-		if (this.is_family || this.webGL_texture || !this.runtime.glwrap)
-			return;
-		this.webGL_texture = this.runtime.glwrap.loadTexture(this.texture_img, true, this.runtime.linearSampling, this.texture_pixelformat);
-	};
-	typeProto.unloadTextures = function ()
-	{
-		if (this.is_family || this.instances.length || !this.webGL_texture)
-			return;
-		this.runtime.glwrap.deleteTexture(this.webGL_texture);
-		this.webGL_texture = null;
-	};
-	typeProto.preloadCanvas2D = function (ctx)
-	{
-		ctx.drawImage(this.texture_img, 0, 0);
-	};
-	function Particle(owner)
-	{
-		this.owner = owner;
-		this.active = false;
-		this.x = 0;
-		this.y = 0;
-		this.speed = 0;
-		this.angle = 0;
-		this.opacity = 1;
-		this.grow = 0;
-		this.size = 0;
-		this.gs = 0;			// gravity speed
-		this.age = 0;
-		cr.seal(this);
-	};
-	Particle.prototype.init = function ()
-	{
-		var owner = this.owner;
-		this.x = owner.x - (owner.xrandom / 2) + (Math.random() * owner.xrandom);
-		this.y = owner.y - (owner.yrandom / 2) + (Math.random() * owner.yrandom);
-		this.speed = owner.initspeed - (owner.speedrandom / 2) + (Math.random() * owner.speedrandom);
-		this.angle = owner.angle - (owner.spraycone / 2) + (Math.random() * owner.spraycone);
-		this.opacity = owner.initopacity;
-		this.size = owner.initsize - (owner.sizerandom / 2) + (Math.random() * owner.sizerandom);
-		this.grow = owner.growrate - (owner.growrandom / 2) + (Math.random() * owner.growrandom);
-		this.gs = 0;
-		this.age = 0;
-	};
-	Particle.prototype.tick = function (dt)
-	{
-		var owner = this.owner;
-		this.x += Math.cos(this.angle) * this.speed * dt;
-		this.y += Math.sin(this.angle) * this.speed * dt;
-		this.y += this.gs * dt;
-		this.speed += owner.acc * dt;
-		this.size += this.grow * dt;
-		this.gs += owner.g * dt;
-		this.age += dt;
-		if (this.size < 1)
-		{
-			this.active = false;
-			return;
-		}
-		if (owner.lifeanglerandom !== 0)
-			this.angle += (Math.random() * owner.lifeanglerandom * dt) - (owner.lifeanglerandom * dt / 2);
-		if (owner.lifespeedrandom !== 0)
-			this.speed += (Math.random() * owner.lifespeedrandom * dt) - (owner.lifespeedrandom * dt / 2);
-		if (owner.lifeopacityrandom !== 0)
-		{
-			this.opacity += (Math.random() * owner.lifeopacityrandom * dt) - (owner.lifeopacityrandom * dt / 2);
-			if (this.opacity < 0)
-				this.opacity = 0;
-			else if (this.opacity > 1)
-				this.opacity = 1;
-		}
-		if (owner.destroymode <= 1 && this.age >= owner.timeout)
-		{
-			this.active = false;
-		}
-		if (owner.destroymode === 2 && this.speed <= 0)
-		{
-			this.active = false;
-		}
-	};
-	Particle.prototype.draw = function (ctx)
-	{
-		var curopacity = this.owner.opacity * this.opacity;
-		if (curopacity === 0)
-			return;
-		if (this.owner.destroymode === 0)
-			curopacity *= 1 - (this.age / this.owner.timeout);
-		ctx.globalAlpha = curopacity;
-		var drawx = this.x - this.size / 2;
-		var drawy = this.y - this.size / 2;
-		if (this.owner.runtime.pixel_rounding)
-		{
-			drawx = (drawx + 0.5) | 0;
-			drawy = (drawy + 0.5) | 0;
-		}
-		ctx.drawImage(this.owner.type.texture_img, drawx, drawy, this.size, this.size);
-	};
-	Particle.prototype.drawGL = function (glw)
-	{
-		var curopacity = this.owner.opacity * this.opacity;
-		if (this.owner.destroymode === 0)
-			curopacity *= 1 - (this.age / this.owner.timeout);
-		var drawsize = this.size;
-		var scaleddrawsize = drawsize * this.owner.particlescale;
-		var drawx = this.x - drawsize / 2;
-		var drawy = this.y - drawsize / 2;
-		if (this.owner.runtime.pixel_rounding)
-		{
-			drawx = (drawx + 0.5) | 0;
-			drawy = (drawy + 0.5) | 0;
-		}
-		if (scaleddrawsize < 1 || curopacity === 0)
-			return;
-		if (scaleddrawsize < glw.minPointSize || scaleddrawsize > glw.maxPointSize)
-		{
-			glw.setOpacity(curopacity);
-			glw.quad(drawx, drawy, drawx + drawsize, drawy, drawx + drawsize, drawy + drawsize, drawx, drawy + drawsize);
-		}
-		else
-			glw.point(this.x, this.y, scaleddrawsize, curopacity);
-	};
-	Particle.prototype.left = function ()
-	{
-		return this.x - this.size / 2;
-	};
-	Particle.prototype.right = function ()
-	{
-		return this.x + this.size / 2;
-	};
-	Particle.prototype.top = function ()
-	{
-		return this.y - this.size / 2;
-	};
-	Particle.prototype.bottom = function ()
-	{
-		return this.y + this.size / 2;
-	};
-	pluginProto.Instance = function(type)
-	{
-		this.type = type;
-		this.runtime = type.runtime;
-	};
-	var instanceProto = pluginProto.Instance.prototype;
-	var deadparticles = [];
-	instanceProto.onCreate = function()
-	{
-		var props = this.properties;
-		this.rate = props[0];
-		this.spraycone = cr.to_radians(props[1]);
-		this.spraytype = props[2];			// 0 = continuous, 1 = one-shot
-		this.spraying = true;				// for continuous mode only
-		this.initspeed = props[3];
-		this.initsize = props[4];
-		this.initopacity = props[5] / 100.0;
-		this.growrate = props[6];
-		this.xrandom = props[7];
-		this.yrandom = props[8];
-		this.speedrandom = props[9];
-		this.sizerandom = props[10];
-		this.growrandom = props[11];
-		this.acc = props[12];
-		this.g = props[13];
-		this.lifeanglerandom = props[14];
-		this.lifespeedrandom = props[15];
-		this.lifeopacityrandom = props[16];
-		this.destroymode = props[17];		// 0 = fade, 1 = timeout, 2 = stopped
-		this.timeout = props[18];
-		this.particleCreateCounter = 0;
-		this.particlescale = 1;
-		this.particleBoxLeft = this.x;
-		this.particleBoxTop = this.y;
-		this.particleBoxRight = this.x;
-		this.particleBoxBottom = this.y;
-		this.add_bbox_changed_callback(function (self) {
-			self.bbox.set(self.particleBoxLeft, self.particleBoxTop, self.particleBoxRight, self.particleBoxBottom);
-			self.bquad.set_from_rect(self.bbox);
-			self.bbox_changed = false;
-			self.update_collision_cell();
-		});
-		if (!this.recycled)
-			this.particles = [];
-		this.runtime.tickMe(this);
-		this.type.loadTextures();
-		if (this.spraytype === 1)
-		{
-			for (var i = 0; i < this.rate; i++)
-				this.allocateParticle().opacity = 0;
-		}
-		this.first_tick = true;		// for re-init'ing one-shot particles on first tick so they assume any new angle/position
-	};
-	instanceProto.saveToJSON = function ()
-	{
-		var o = {
-			"r": this.rate,
-			"sc": this.spraycone,
-			"st": this.spraytype,
-			"s": this.spraying,
-			"isp": this.initspeed,
-			"isz": this.initsize,
-			"io": this.initopacity,
-			"gr": this.growrate,
-			"xr": this.xrandom,
-			"yr": this.yrandom,
-			"spr": this.speedrandom,
-			"szr": this.sizerandom,
-			"grnd": this.growrandom,
-			"acc": this.acc,
-			"g": this.g,
-			"lar": this.lifeanglerandom,
-			"lsr": this.lifespeedrandom,
-			"lor": this.lifeopacityrandom,
-			"dm": this.destroymode,
-			"to": this.timeout,
-			"pcc": this.particleCreateCounter,
-			"ft": this.first_tick,
-			"p": []
-		};
-		var i, len, p;
-		var arr = o["p"];
-		for (i = 0, len = this.particles.length; i < len; i++)
-		{
-			p = this.particles[i];
-			arr.push([p.x, p.y, p.speed, p.angle, p.opacity, p.grow, p.size, p.gs, p.age]);
-		}
-		return o;
-	};
-	instanceProto.loadFromJSON = function (o)
-	{
-		this.rate = o["r"];
-		this.spraycone = o["sc"];
-		this.spraytype = o["st"];
-		this.spraying = o["s"];
-		this.initspeed = o["isp"];
-		this.initsize = o["isz"];
-		this.initopacity = o["io"];
-		this.growrate = o["gr"];
-		this.xrandom = o["xr"];
-		this.yrandom = o["yr"];
-		this.speedrandom = o["spr"];
-		this.sizerandom = o["szr"];
-		this.growrandom = o["grnd"];
-		this.acc = o["acc"];
-		this.g = o["g"];
-		this.lifeanglerandom = o["lar"];
-		this.lifespeedrandom = o["lsr"];
-		this.lifeopacityrandom = o["lor"];
-		this.destroymode = o["dm"];
-		this.timeout = o["to"];
-		this.particleCreateCounter = o["pcc"];
-		this.first_tick = o["ft"];
-		deadparticles.push.apply(deadparticles, this.particles);
-		this.particles.length = 0;
-		var i, len, p, d;
-		var arr = o["p"];
-		for (i = 0, len = arr.length; i < len; i++)
-		{
-			p = this.allocateParticle();
-			d = arr[i];
-			p.x = d[0];
-			p.y = d[1];
-			p.speed = d[2];
-			p.angle = d[3];
-			p.opacity = d[4];
-			p.grow = d[5];
-			p.size = d[6];
-			p.gs = d[7];
-			p.age = d[8];
-		}
-	};
-	instanceProto.onDestroy = function ()
-	{
-		deadparticles.push.apply(deadparticles, this.particles);
-		this.particles.length = 0;
-	};
-	instanceProto.allocateParticle = function ()
-	{
-		var p;
-		if (deadparticles.length)
-		{
-			p = deadparticles.pop();
-			p.owner = this;
-		}
-		else
-			p = new Particle(this);
-		this.particles.push(p);
-		p.active = true;
-		return p;
-	};
-	instanceProto.tick = function()
-	{
-		var dt = this.runtime.getDt(this);
-		var i, len, p, n, j;
-		if (this.spraytype === 0 && this.spraying)
-		{
-			this.particleCreateCounter += dt * this.rate;
-			n = cr.floor(this.particleCreateCounter);
-			this.particleCreateCounter -= n;
-			for (i = 0; i < n; i++)
-			{
-				p = this.allocateParticle();
-				p.init();
-			}
-		}
-		this.particleBoxLeft = this.x;
-		this.particleBoxTop = this.y;
-		this.particleBoxRight = this.x;
-		this.particleBoxBottom = this.y;
-		for (i = 0, j = 0, len = this.particles.length; i < len; i++)
-		{
-			p = this.particles[i];
-			this.particles[j] = p;
-			this.runtime.redraw = true;
-			if (this.spraytype === 1 && this.first_tick)
-				p.init();
-			p.tick(dt);
-			if (!p.active)
-			{
-				deadparticles.push(p);
-				continue;
-			}
-			if (p.left() < this.particleBoxLeft)
-				this.particleBoxLeft = p.left();
-			if (p.right() > this.particleBoxRight)
-				this.particleBoxRight = p.right();
-			if (p.top() < this.particleBoxTop)
-				this.particleBoxTop = p.top();
-			if (p.bottom() > this.particleBoxBottom)
-				this.particleBoxBottom = p.bottom();
-			j++;
-		}
-		this.particles.length = j;
-		this.set_bbox_changed();
-		this.first_tick = false;
-		if (this.spraytype === 1 && this.particles.length === 0)
-			this.runtime.DestroyInstance(this);
-	};
-	instanceProto.draw = function (ctx)
-	{
-		var i, len, p, layer = this.layer;
-		for (i = 0, len = this.particles.length; i < len; i++)
-		{
-			p = this.particles[i];
-			if (p.right() >= layer.viewLeft && p.bottom() >= layer.viewTop && p.left() <= layer.viewRight && p.top() <= layer.viewBottom)
-			{
-				p.draw(ctx);
-			}
-		}
-	};
-	instanceProto.drawGL = function (glw)
-	{
-		this.particlescale = this.layer.getScale();
-		glw.setTexture(this.type.webGL_texture);
-		var i, len, p, layer = this.layer;
-		for (i = 0, len = this.particles.length; i < len; i++)
-		{
-			p = this.particles[i];
-			if (p.right() >= layer.viewLeft && p.bottom() >= layer.viewTop && p.left() <= layer.viewRight && p.top() <= layer.viewBottom)
-			{
-				p.drawGL(glw);
-			}
-		}
-	};
-	function Cnds() {};
-	Cnds.prototype.IsSpraying = function ()
-	{
-		return this.spraying;
-	};
-	pluginProto.cnds = new Cnds();
-	function Acts() {};
-	Acts.prototype.SetSpraying = function (set_)
-	{
-		this.spraying = (set_ !== 0);
-	};
-	Acts.prototype.SetEffect = function (effect)
-	{
-		this.compositeOp = cr.effectToCompositeOp(effect);
-		cr.setGLBlend(this, effect, this.runtime.gl);
-		this.runtime.redraw = true;
-	};
-	Acts.prototype.SetRate = function (x)
-	{
-		this.rate = x;
-		var diff, i;
-		if (this.spraytype === 1 && this.first_tick)
-		{
-			if (x < this.particles.length)
-			{
-				diff = this.particles.length - x;
-				for (i = 0; i < diff; i++)
-					deadparticles.push(this.particles.pop());
-			}
-			else if (x > this.particles.length)
-			{
-				diff = x - this.particles.length;
-				for (i = 0; i < diff; i++)
-					this.allocateParticle().opacity = 0;
-			}
-		}
-	};
-	Acts.prototype.SetSprayCone = function (x)
-	{
-		this.spraycone = cr.to_radians(x);
-	};
-	Acts.prototype.SetInitSpeed = function (x)
-	{
-		this.initspeed = x;
-	};
-	Acts.prototype.SetInitSize = function (x)
-	{
-		this.initsize = x;
-	};
-	Acts.prototype.SetInitOpacity = function (x)
-	{
-		this.initopacity = x / 100;
-	};
-	Acts.prototype.SetGrowRate = function (x)
-	{
-		this.growrate = x;
-	};
-	Acts.prototype.SetXRandomiser = function (x)
-	{
-		this.xrandom = x;
-	};
-	Acts.prototype.SetYRandomiser = function (x)
-	{
-		this.yrandom = x;
-	};
-	Acts.prototype.SetSpeedRandomiser = function (x)
-	{
-		this.speedrandom = x;
-	};
-	Acts.prototype.SetSizeRandomiser = function (x)
-	{
-		this.sizerandom = x;
-	};
-	Acts.prototype.SetGrowRateRandomiser = function (x)
-	{
-		this.growrandom = x;
-	};
-	Acts.prototype.SetParticleAcc = function (x)
-	{
-		this.acc = x;
-	};
-	Acts.prototype.SetGravity = function (x)
-	{
-		this.g = x;
-	};
-	Acts.prototype.SetAngleRandomiser = function (x)
-	{
-		this.lifeanglerandom = x;
-	};
-	Acts.prototype.SetSpeedRandomiser = function (x)
-	{
-		this.lifespeedrandom = x;
-	};
-	Acts.prototype.SetOpacityRandomiser = function (x)
-	{
-		this.lifeopacityrandom = x;
-	};
-	Acts.prototype.SetTimeout = function (x)
-	{
-		this.timeout = x;
-	};
-	pluginProto.acts = new Acts();
-	function Exps() {};
-	Exps.prototype.ParticleCount = function (ret)
-	{
-		ret.set_int(this.particles.length);
-	};
-	Exps.prototype.Rate = function (ret)
-	{
-		ret.set_float(this.rate);
-	};
-	Exps.prototype.SprayCone = function (ret)
-	{
-		ret.set_float(cr.to_degrees(this.spraycone));
-	};
-	Exps.prototype.InitSpeed = function (ret)
-	{
-		ret.set_float(this.initspeed);
-	};
-	Exps.prototype.InitSize = function (ret)
-	{
-		ret.set_float(this.initsize);
-	};
-	Exps.prototype.InitOpacity = function (ret)
-	{
-		ret.set_float(this.initopacity * 100);
-	};
-	Exps.prototype.InitGrowRate = function (ret)
-	{
-		ret.set_float(this.growrate);
-	};
-	Exps.prototype.XRandom = function (ret)
-	{
-		ret.set_float(this.xrandom);
-	};
-	Exps.prototype.YRandom = function (ret)
-	{
-		ret.set_float(this.yrandom);
-	};
-	Exps.prototype.InitSpeedRandom = function (ret)
-	{
-		ret.set_float(this.speedrandom);
-	};
-	Exps.prototype.InitSizeRandom = function (ret)
-	{
-		ret.set_float(this.sizerandom);
-	};
-	Exps.prototype.InitGrowRandom = function (ret)
-	{
-		ret.set_float(this.growrandom);
-	};
-	Exps.prototype.ParticleAcceleration = function (ret)
-	{
-		ret.set_float(this.acc);
-	};
-	Exps.prototype.Gravity = function (ret)
-	{
-		ret.set_float(this.g);
-	};
-	Exps.prototype.ParticleAngleRandom = function (ret)
-	{
-		ret.set_float(this.lifeanglerandom);
-	};
-	Exps.prototype.ParticleSpeedRandom = function (ret)
-	{
-		ret.set_float(this.lifespeedrandom);
-	};
-	Exps.prototype.ParticleOpacityRandom = function (ret)
-	{
-		ret.set_float(this.lifeopacityrandom);
-	};
-	Exps.prototype.Timeout = function (ret)
-	{
-		ret.set_float(this.timeout);
-	};
-	pluginProto.exps = new Exps();
-}());
-;
-;
 cr.plugins_.Sprite = function(runtime)
 {
 	this.runtime = runtime;
@@ -18157,26 +13999,20 @@ cr.plugins_.Sprite = function(runtime)
 	};
 	pluginProto.exps = new Exps();
 }());
+/* global cr,log,assert2 */
+/* jshint globalstrict: true */
+/* jshint strict: true */
 ;
 ;
-cr.plugins_.Text = function(runtime)
+cr.plugins_.Spritefont2 = function(runtime)
 {
 	this.runtime = runtime;
 };
 (function ()
 {
-	var pluginProto = cr.plugins_.Text.prototype;
+	var pluginProto = cr.plugins_.Spritefont2.prototype;
 	pluginProto.onCreate = function ()
 	{
-		pluginProto.acts.SetWidth = function (w)
-		{
-			if (this.width !== w)
-			{
-				this.width = w;
-				this.text_changed = true;	// also recalculate text wrapping
-				this.set_bbox_changed();
-			}
-		};
 	};
 	pluginProto.Type = function(plugin)
 	{
@@ -18186,310 +14022,243 @@ cr.plugins_.Text = function(runtime)
 	var typeProto = pluginProto.Type.prototype;
 	typeProto.onCreate = function()
 	{
+		if (this.is_family)
+			return;
+		this.texture_img = new Image();
+		this.texture_img["idtkLoadDisposed"] = true;
+		this.texture_img.src = this.texture_file;
+		this.runtime.waitForImageLoad(this.texture_img);
+		this.webGL_texture = null;
 	};
 	typeProto.onLostWebGLContext = function ()
 	{
 		if (this.is_family)
 			return;
-		var i, len, inst;
-		for (i = 0, len = this.instances.length; i < len; i++)
+		this.webGL_texture = null;
+	};
+	typeProto.onRestoreWebGLContext = function ()
+	{
+		if (this.is_family || !this.instances.length)
+			return;
+		if (!this.webGL_texture)
 		{
-			inst = this.instances[i];
-			inst.mycanvas = null;
-			inst.myctx = null;
-			inst.mytex = null;
+			this.webGL_texture = this.runtime.glwrap.loadTexture(this.texture_img, false, this.runtime.linearSampling, this.texture_pixelformat);
 		}
+		var i, len;
+		for (i = 0, len = this.instances.length; i < len; i++)
+			this.instances[i].webGL_texture = this.webGL_texture;
+	};
+	typeProto.unloadTextures = function ()
+	{
+		if (this.is_family || this.instances.length || !this.webGL_texture)
+			return;
+		this.runtime.glwrap.deleteTexture(this.webGL_texture);
+		this.webGL_texture = null;
+	};
+	typeProto.preloadCanvas2D = function (ctx)
+	{
+		ctx.drawImage(this.texture_img, 0, 0);
 	};
 	pluginProto.Instance = function(type)
 	{
 		this.type = type;
 		this.runtime = type.runtime;
-		if (this.recycled)
-			this.lines.length = 0;
-		else
-			this.lines = [];		// for word wrapping
-		this.text_changed = true;
 	};
 	var instanceProto = pluginProto.Instance.prototype;
-	var requestedWebFonts = {};		// already requested web fonts have an entry here
+	instanceProto.onDestroy = function()
+	{
+		freeAllLines (this.lines);
+		freeAllClip  (this.clipList);
+		freeAllClipUV(this.clipUV);
+		cr.wipe(this.characterWidthList);
+	};
 	instanceProto.onCreate = function()
 	{
-		this.text = this.properties[0];
-		this.visible = (this.properties[1] === 0);		// 0=visible, 1=invisible
-		this.font = this.properties[2];
-		this.color = this.properties[3];
-		this.halign = this.properties[4];				// 0=left, 1=center, 2=right
-		this.valign = this.properties[5];				// 0=top, 1=center, 2=bottom
-		this.wrapbyword = (this.properties[7] === 0);	// 0=word, 1=character
-		this.lastwidth = this.width;
-		this.lastwrapwidth = this.width;
-		this.lastheight = this.height;
-		this.line_height_offset = this.properties[8];
-		this.facename = "";
-		this.fontstyle = "";
-		this.ptSize = 0;
-		this.textWidth = 0;
+		this.texture_img      = this.type.texture_img;
+		this.characterWidth   = this.properties[0];
+		this.characterHeight  = this.properties[1];
+		this.characterSet     = this.properties[2];
+		this.text             = this.properties[3];
+		this.characterScale   = this.properties[4];
+		this.visible          = (this.properties[5] === 0);	// 0=visible, 1=invisible
+		this.halign           = this.properties[6]/2.0;			// 0=left, 1=center, 2=right
+		this.valign           = this.properties[7]/2.0;			// 0=top, 1=center, 2=bottom
+		this.wrapbyword       = (this.properties[9] === 0);	// 0=word, 1=character
+		this.characterSpacing = this.properties[10];
+		this.lineHeight       = this.properties[11];
+		this.textWidth  = 0;
 		this.textHeight = 0;
-		this.parseFont();
-		this.mycanvas = null;
-		this.myctx = null;
-		this.mytex = null;
-		this.need_text_redraw = false;
-		this.last_render_tick = this.runtime.tickcount;
 		if (this.recycled)
-			this.rcTex.set(0, 0, 1, 1);
-		else
-			this.rcTex = new cr.rect(0, 0, 1, 1);
-		if (this.runtime.glwrap)
-			this.runtime.tickMe(this);
-;
-	};
-	instanceProto.parseFont = function ()
-	{
-		var arr = this.font.split(" ");
-		var i;
-		for (i = 0; i < arr.length; i++)
 		{
-			if (arr[i].substr(arr[i].length - 2, 2) === "pt")
-			{
-				this.ptSize = parseInt(arr[i].substr(0, arr[i].length - 2));
-				this.pxHeight = Math.ceil((this.ptSize / 72.0) * 96.0) + 4;	// assume 96dpi...
-				if (i > 0)
-					this.fontstyle = arr[i - 1];
-				this.facename = arr[i + 1];
-				for (i = i + 2; i < arr.length; i++)
-					this.facename += " " + arr[i];
-				break;
-			}
+			this.lines.length = 0;
+			cr.wipe(this.clipList);
+			cr.wipe(this.clipUV);
+			cr.wipe(this.characterWidthList);
 		}
+		else
+		{
+			this.lines = [];
+			this.clipList = {};
+			this.clipUV = {};
+			this.characterWidthList = {};
+		}
+		this.text_changed = true;
+		this.lastwrapwidth = this.width;
+		if (this.runtime.glwrap)
+		{
+			if (!this.type.webGL_texture)
+			{
+				this.type.webGL_texture = this.runtime.glwrap.loadTexture(this.type.texture_img, false, this.runtime.linearSampling, this.type.texture_pixelformat);
+			}
+			this.webGL_texture = this.type.webGL_texture;
+		}
+		this.SplitSheet();
 	};
 	instanceProto.saveToJSON = function ()
 	{
-		return {
+		var save = {
 			"t": this.text,
-			"f": this.font,
-			"c": this.color,
-			"ha": this.halign,
-			"va": this.valign,
-			"wr": this.wrapbyword,
-			"lho": this.line_height_offset,
-			"fn": this.facename,
-			"fs": this.fontstyle,
-			"ps": this.ptSize,
-			"pxh": this.pxHeight,
+			"csc": this.characterScale,
+			"csp": this.characterSpacing,
+			"lh": this.lineHeight,
 			"tw": this.textWidth,
 			"th": this.textHeight,
-			"lrt": this.last_render_tick
+			"lrt": this.last_render_tick,
+			"cw": {}
 		};
+		for (var ch in this.characterWidthList)
+			save["cw"][ch] = this.characterWidthList[ch];
+		return save;
 	};
 	instanceProto.loadFromJSON = function (o)
 	{
 		this.text = o["t"];
-		this.font = o["f"];
-		this.color = o["c"];
-		this.halign = o["ha"];
-		this.valign = o["va"];
-		this.wrapbyword = o["wr"];
-		this.line_height_offset = o["lho"];
-		this.facename = o["fn"];
-		this.fontstyle = o["fs"];
-		this.ptSize = o["ps"];
-		this.pxHeight = o["pxh"];
+		this.characterScale = o["csc"];
+		this.characterSpacing = o["csp"];
+		this.lineHeight = o["lh"];
 		this.textWidth = o["tw"];
 		this.textHeight = o["th"];
 		this.last_render_tick = o["lrt"];
+		for(var ch in o["cw"])
+			this.characterWidthList[ch] = o["cw"][ch];
 		this.text_changed = true;
-		this.lastwidth = this.width;
 		this.lastwrapwidth = this.width;
-		this.lastheight = this.height;
 	};
-	instanceProto.tick = function ()
+	function trimRight(text)
 	{
-		if (this.runtime.glwrap && this.mytex && (this.runtime.tickcount - this.last_render_tick >= 300))
-		{
-			var layer = this.layer;
-            this.update_bbox();
-            var bbox = this.bbox;
-            if (bbox.right < layer.viewLeft || bbox.bottom < layer.viewTop || bbox.left > layer.viewRight || bbox.top > layer.viewBottom)
-			{
-				this.runtime.glwrap.deleteTexture(this.mytex);
-				this.mytex = null;
-				this.myctx = null;
-				this.mycanvas = null;
-			}
-		}
-	};
-	instanceProto.onDestroy = function ()
+		return text.replace(/\s\s*$/, '');
+	}
+	var MAX_CACHE_SIZE = 1000;
+	function alloc(cache,Constructor)
 	{
-		this.myctx = null;
-		this.mycanvas = null;
-		if (this.runtime.glwrap && this.mytex)
-			this.runtime.glwrap.deleteTexture(this.mytex);
-		this.mytex = null;
-	};
-	instanceProto.updateFont = function ()
-	{
-		this.font = this.fontstyle + " " + this.ptSize.toString() + "pt " + this.facename;
-		this.text_changed = true;
-		this.runtime.redraw = true;
-	};
-	instanceProto.draw = function(ctx, glmode)
-	{
-		ctx.font = this.font;
-		ctx.textBaseline = "top";
-		ctx.fillStyle = this.color;
-		ctx.globalAlpha = glmode ? 1 : this.opacity;
-		var myscale = 1;
-		if (glmode)
-		{
-			myscale = this.layer.getScale();
-			ctx.save();
-			ctx.scale(myscale, myscale);
-		}
-		if (this.text_changed || this.width !== this.lastwrapwidth)
-		{
-			this.type.plugin.WordWrap(this.text, this.lines, ctx, this.width, this.wrapbyword);
-			this.text_changed = false;
-			this.lastwrapwidth = this.width;
-		}
-		this.update_bbox();
-		var penX = glmode ? 0 : this.bquad.tlx;
-		var penY = glmode ? 0 : this.bquad.tly;
-		if (this.runtime.pixel_rounding)
-		{
-			penX = (penX + 0.5) | 0;
-			penY = (penY + 0.5) | 0;
-		}
-		if (this.angle !== 0 && !glmode)
-		{
-			ctx.save();
-			ctx.translate(penX, penY);
-			ctx.rotate(this.angle);
-			penX = 0;
-			penY = 0;
-		}
-		var endY = penY + this.height;
-		var line_height = this.pxHeight;
-		line_height += this.line_height_offset;
-		var drawX;
-		var i;
-		if (this.valign === 1)		// center
-			penY += Math.max(this.height / 2 - (this.lines.length * line_height) / 2, 0);
-		else if (this.valign === 2)	// bottom
-			penY += Math.max(this.height - (this.lines.length * line_height) - 2, 0);
-		for (i = 0; i < this.lines.length; i++)
-		{
-			drawX = penX;
-			if (this.halign === 1)		// center
-				drawX = penX + (this.width - this.lines[i].width) / 2;
-			else if (this.halign === 2)	// right
-				drawX = penX + (this.width - this.lines[i].width);
-			ctx.fillText(this.lines[i].text, drawX, penY);
-			penY += line_height;
-			if (penY >= endY - line_height)
-				break;
-		}
-		if (this.angle !== 0 || glmode)
-			ctx.restore();
-		this.last_render_tick = this.runtime.tickcount;
-	};
-	instanceProto.drawGL = function(glw)
-	{
-		if (this.width < 1 || this.height < 1)
-			return;
-		var need_redraw = this.text_changed || this.need_text_redraw;
-		this.need_text_redraw = false;
-		var layer_scale = this.layer.getScale();
-		var layer_angle = this.layer.getAngle();
-		var rcTex = this.rcTex;
-		var floatscaledwidth = layer_scale * this.width;
-		var floatscaledheight = layer_scale * this.height;
-		var scaledwidth = Math.ceil(floatscaledwidth);
-		var scaledheight = Math.ceil(floatscaledheight);
-		var halfw = this.runtime.draw_width / 2;
-		var halfh = this.runtime.draw_height / 2;
-		if (!this.myctx)
-		{
-			this.mycanvas = document.createElement("canvas");
-			this.mycanvas.width = scaledwidth;
-			this.mycanvas.height = scaledheight;
-			this.lastwidth = scaledwidth;
-			this.lastheight = scaledheight;
-			need_redraw = true;
-			this.myctx = this.mycanvas.getContext("2d");
-		}
-		if (scaledwidth !== this.lastwidth || scaledheight !== this.lastheight)
-		{
-			this.mycanvas.width = scaledwidth;
-			this.mycanvas.height = scaledheight;
-			if (this.mytex)
-			{
-				glw.deleteTexture(this.mytex);
-				this.mytex = null;
-			}
-			need_redraw = true;
-		}
-		if (need_redraw)
-		{
-			this.myctx.clearRect(0, 0, scaledwidth, scaledheight);
-			this.draw(this.myctx, true);
-			if (!this.mytex)
-				this.mytex = glw.createEmptyTexture(scaledwidth, scaledheight, this.runtime.linearSampling, this.runtime.isMobile);
-			glw.videoToTexture(this.mycanvas, this.mytex, this.runtime.isMobile);
-		}
-		this.lastwidth = scaledwidth;
-		this.lastheight = scaledheight;
-		glw.setTexture(this.mytex);
-		glw.setOpacity(this.opacity);
-		glw.resetModelView();
-		glw.translate(-halfw, -halfh);
-		glw.updateModelView();
-		var q = this.bquad;
-		var tlx = this.layer.layerToCanvas(q.tlx, q.tly, true, true);
-		var tly = this.layer.layerToCanvas(q.tlx, q.tly, false, true);
-		var trx = this.layer.layerToCanvas(q.trx, q.try_, true, true);
-		var try_ = this.layer.layerToCanvas(q.trx, q.try_, false, true);
-		var brx = this.layer.layerToCanvas(q.brx, q.bry, true, true);
-		var bry = this.layer.layerToCanvas(q.brx, q.bry, false, true);
-		var blx = this.layer.layerToCanvas(q.blx, q.bly, true, true);
-		var bly = this.layer.layerToCanvas(q.blx, q.bly, false, true);
-		if (this.runtime.pixel_rounding || (this.angle === 0 && layer_angle === 0))
-		{
-			var ox = ((tlx + 0.5) | 0) - tlx;
-			var oy = ((tly + 0.5) | 0) - tly
-			tlx += ox;
-			tly += oy;
-			trx += ox;
-			try_ += oy;
-			brx += ox;
-			bry += oy;
-			blx += ox;
-			bly += oy;
-		}
-		if (this.angle === 0 && layer_angle === 0)
-		{
-			trx = tlx + scaledwidth;
-			try_ = tly;
-			brx = trx;
-			bry = tly + scaledheight;
-			blx = tlx;
-			bly = bry;
-			rcTex.right = 1;
-			rcTex.bottom = 1;
-		}
+		if (cache.length)
+			return cache.pop();
 		else
+			return new Constructor();
+	}
+	function free(cache,data)
+	{
+		if (cache.length < MAX_CACHE_SIZE)
 		{
-			rcTex.right = floatscaledwidth / scaledwidth;
-			rcTex.bottom = floatscaledheight / scaledheight;
+			cache.push(data);
 		}
-		glw.quadTex(tlx, tly, trx, try_, brx, bry, blx, bly, rcTex);
-		glw.resetModelView();
-		glw.scale(layer_scale, layer_scale);
-		glw.rotateZ(-this.layer.getAngle());
-		glw.translate((this.layer.viewLeft + this.layer.viewRight) / -2, (this.layer.viewTop + this.layer.viewBottom) / -2);
-		glw.updateModelView();
-		this.last_render_tick = this.runtime.tickcount;
+	}
+	function freeAll(cache,dataList,isArray)
+	{
+		if (isArray) {
+			var i, len;
+			for (i = 0, len = dataList.length; i < len; i++)
+			{
+				free(cache,dataList[i]);
+			}
+			dataList.length = 0;
+		} else {
+			var prop;
+			for(prop in dataList) {
+				if(Object.prototype.hasOwnProperty.call(dataList,prop)) {
+					free(cache,dataList[prop]);
+					delete dataList[prop];
+				}
+			}
+		}
+	}
+	function addLine(inst,lineIndex,cur_line) {
+		var lines = inst.lines;
+		var line;
+		cur_line = trimRight(cur_line);
+		if (lineIndex >= lines.length)
+			lines.push(allocLine());
+		line = lines[lineIndex];
+		line.text = cur_line;
+		line.width = inst.measureWidth(cur_line);
+		inst.textWidth = cr.max(inst.textWidth,line.width);
+	}
+	var linesCache = [];
+	function allocLine()       { return alloc(linesCache,Object); }
+	function freeLine(l)       { free(linesCache,l); }
+	function freeAllLines(arr) { freeAll(linesCache,arr,true); }
+	function addClip(obj,property,x,y,w,h) {
+		if (obj[property] === undefined) {
+			obj[property] = alloc(clipCache,Object);
+		}
+		obj[property].x = x;
+		obj[property].y = y;
+		obj[property].w = w;
+		obj[property].h = h;
+	}
+	var clipCache = [];
+	function allocClip()      { return alloc(clipCache,Object); }
+	function freeAllClip(obj) { freeAll(clipCache,obj,false);}
+	function addClipUV(obj,property,left,top,right,bottom) {
+		if (obj[property] === undefined) {
+			obj[property] = alloc(clipUVCache,cr.rect);
+		}
+		obj[property].left   = left;
+		obj[property].top    = top;
+		obj[property].right  = right;
+		obj[property].bottom = bottom;
+	}
+	var clipUVCache = [];
+	function allocClipUV()      { return alloc(clipUVCache,cr.rect);}
+	function freeAllClipUV(obj) { freeAll(clipUVCache,obj,false);}
+	instanceProto.SplitSheet = function() {
+		var texture      = this.texture_img;
+		var texWidth     = texture.width;
+		var texHeight    = texture.height;
+		var charWidth    = this.characterWidth;
+		var charHeight   = this.characterHeight;
+		var charU        = charWidth /texWidth;
+		var charV        = charHeight/texHeight;
+		var charSet      = this.characterSet ;
+		var cols = Math.floor(texWidth/charWidth);
+		var rows = Math.floor(texHeight/charHeight);
+		for ( var c = 0; c < charSet.length; c++) {
+			if  (c >= cols * rows) break;
+			var x = c%cols;
+			var y = Math.floor(c/cols);
+			var letter = charSet.charAt(c);
+			if (this.runtime.glwrap) {
+				addClipUV(
+					this.clipUV, letter,
+					x * charU ,
+					y * charV ,
+					(x+1) * charU ,
+					(y+1) * charV
+				);
+			} else {
+				addClip(
+					this.clipList, letter,
+					x * charWidth,
+					y * charHeight,
+					charWidth,
+					charHeight
+				);
+			}
+		}
 	};
+	/*
+     *	Word-Wrapping
+     */
 	var wordsCache = [];
 	pluginProto.TokeniseWords = function (text)
 	{
@@ -18529,112 +14298,349 @@ cr.plugins_.Text = function(runtime)
 		if (cur_word.length)
 			wordsCache.push(cur_word);
 	};
-	var linesCache = [];
-	function allocLine()
+	pluginProto.WordWrap = function (inst)
 	{
-		if (linesCache.length)
-			return linesCache.pop();
-		else
-			return {};
-	};
-	function freeLine(l)
-	{
-		linesCache.push(l);
-	};
-	function freeAllLines(arr)
-	{
-		var i, len;
-		for (i = 0, len = arr.length; i < len; i++)
-		{
-			freeLine(arr[i]);
-		}
-		arr.length = 0;
-	};
-	pluginProto.WordWrap = function (text, lines, ctx, width, wrapbyword)
-	{
+		var text = inst.text;
+		var lines = inst.lines;
 		if (!text || !text.length)
 		{
 			freeAllLines(lines);
 			return;
 		}
+		var width = inst.width;
 		if (width <= 2.0)
 		{
 			freeAllLines(lines);
 			return;
 		}
-		if (text.length <= 100 && text.indexOf("\n") === -1)
+		var charWidth = inst.characterWidth;
+		var charScale = inst.characterScale;
+		var charSpacing = inst.characterSpacing;
+		if ( (text.length * (charWidth * charScale + charSpacing) - charSpacing) <= width && text.indexOf("\n") === -1)
 		{
-			var all_width = ctx.measureText(text).width;
+			var all_width = inst.measureWidth(text);
 			if (all_width <= width)
 			{
 				freeAllLines(lines);
 				lines.push(allocLine());
 				lines[0].text = text;
 				lines[0].width = all_width;
+				inst.textWidth  = all_width;
+				inst.textHeight = inst.characterHeight * charScale + inst.lineHeight;
 				return;
 			}
 		}
-		this.WrapText(text, lines, ctx, width, wrapbyword);
+		var wrapbyword = inst.wrapbyword;
+		this.WrapText(inst);
+		inst.textHeight = lines.length * (inst.characterHeight * charScale + inst.lineHeight);
 	};
-	pluginProto.WrapText = function (text, lines, ctx, width, wrapbyword)
+	pluginProto.WrapText = function (inst)
 	{
+		var wrapbyword = inst.wrapbyword;
+		var text       = inst.text;
+		var lines      = inst.lines;
+		var width      = inst.width;
 		var wordArray;
-		if (wrapbyword)
-		{
+		if (wrapbyword) {
 			this.TokeniseWords(text);	// writes to wordsCache
 			wordArray = wordsCache;
-		}
-		else
+		} else {
 			wordArray = text;
+		}
 		var cur_line = "";
 		var prev_line;
 		var line_width;
 		var i;
 		var lineIndex = 0;
 		var line;
+		var ignore_newline = false;
 		for (i = 0; i < wordArray.length; i++)
 		{
 			if (wordArray[i] === "\n")
 			{
-				if (lineIndex >= lines.length)
-					lines.push(allocLine());
-				line = lines[lineIndex];
-				line.text = cur_line;
-				line.width = ctx.measureText(cur_line).width;
-				lineIndex++;
+				if (ignore_newline === true) {
+					ignore_newline = false;
+				} else {
+					addLine(inst,lineIndex,cur_line);
+					lineIndex++;
+				}
 				cur_line = "";
 				continue;
 			}
+			ignore_newline = false;
 			prev_line = cur_line;
 			cur_line += wordArray[i];
-			line_width = ctx.measureText(cur_line).width;
-			if (line_width >= width)
+			line_width = inst.measureWidth(trimRight(cur_line));
+			if (line_width > width)
 			{
-				if (lineIndex >= lines.length)
-					lines.push(allocLine());
-				line = lines[lineIndex];
-				line.text = prev_line;
-				line.width = ctx.measureText(prev_line).width;
+				if (prev_line === "") {
+					addLine(inst,lineIndex,cur_line);
+					cur_line = "";
+					ignore_newline = true;
+				} else {
+					addLine(inst,lineIndex,prev_line);
+					cur_line = wordArray[i];
+				}
 				lineIndex++;
-				cur_line = wordArray[i];
 				if (!wrapbyword && cur_line === " ")
 					cur_line = "";
 			}
 		}
-		if (cur_line.length)
+		if (trimRight(cur_line).length)
 		{
-			if (lineIndex >= lines.length)
-				lines.push(allocLine());
-			line = lines[lineIndex];
-			line.text = cur_line;
-			line.width = ctx.measureText(cur_line).width;
+			addLine(inst,lineIndex,cur_line);
 			lineIndex++;
 		}
 		for (i = lineIndex; i < lines.length; i++)
 			freeLine(lines[i]);
 		lines.length = lineIndex;
 	};
-	function Cnds() {};
+	instanceProto.measureWidth = function(text) {
+		var spacing = this.characterSpacing;
+		var len     = text.length;
+		var width   = 0;
+		for (var i = 0; i < len; i++) {
+			width += this.getCharacterWidth(text.charAt(i)) * this.characterScale + spacing;
+		}
+		width -= (width > 0) ? spacing : 0;
+		return width;
+	};
+	/***/
+	instanceProto.getCharacterWidth = function(character) {
+		var widthList = this.characterWidthList;
+		if (widthList[character] !== undefined) {
+			return widthList[character];
+		} else {
+			return this.characterWidth;
+		}
+	};
+	instanceProto.rebuildText = function() {
+		if (this.text_changed || this.width !== this.lastwrapwidth) {
+			this.textWidth = 0;
+			this.textHeight = 0;
+			this.type.plugin.WordWrap(this);
+			this.text_changed = false;
+			this.lastwrapwidth = this.width;
+		}
+	};
+	var EPSILON = 0.00001;
+	instanceProto.draw = function(ctx, glmode)
+	{
+		var texture = this.texture_img;
+		if (this.text !== "" && texture != null) {
+			this.rebuildText();
+			if (this.height < this.characterHeight*this.characterScale + this.lineHeight) {
+				return;
+			}
+			ctx.globalAlpha = this.opacity;
+			var myx = this.x;
+			var myy = this.y;
+			if (this.runtime.pixel_rounding)
+			{
+				myx = (myx + 0.5) | 0;
+				myy = (myy + 0.5) | 0;
+			}
+			var viewLeft = this.layer.viewLeft;
+			var viewTop = this.layer.viewTop;
+			var viewRight = this.layer.viewRight;
+			var viewBottom = this.layer.viewBottom;
+			ctx.save();
+			ctx.translate(myx, myy);
+			ctx.rotate(this.angle);
+			var ha         = this.halign;
+			var va         = this.valign;
+			var scale      = this.characterScale;
+			var charHeight = this.characterHeight * scale;
+			var lineHeight = this.lineHeight;
+			var charSpace  = this.characterSpacing;
+			var lines = this.lines;
+			var textHeight = this.textHeight;
+			var letterWidth;
+			var halign;
+			var valign = va * cr.max(0,(this.height - textHeight));
+			var offx = -(this.hotspotX * this.width);
+			var offy = -(this.hotspotY * this.height);
+			offy += valign;
+			var drawX ;
+			var drawY = offy;
+			var roundX, roundY;
+			for(var i = 0; i < lines.length; i++) {
+				var line = lines[i].text;
+				var len  = lines[i].width;
+				halign = ha * cr.max(0,this.width - len);
+				drawX = offx + halign;
+				drawY += lineHeight;
+				if (myy + drawY + charHeight < viewTop)
+				{
+					drawY += charHeight;
+					continue;
+				}
+				for(var j = 0; j < line.length; j++) {
+					var letter = line.charAt(j);
+					letterWidth = this.getCharacterWidth(letter);
+					var clip = this.clipList[letter];
+					if (myx + drawX + letterWidth * scale + charSpace < viewLeft)
+					{
+						drawX += letterWidth * scale + charSpace;
+						continue;
+					}
+					if ( drawX + letterWidth * scale > this.width + EPSILON ) {
+						break;
+					}
+					if (clip !== undefined) {
+						roundX = drawX;
+						roundY = drawY;
+						if (this.angle === 0)
+						{
+							roundX = Math.round(roundX);
+							roundY = Math.round(roundY);
+						}
+						ctx.drawImage( this.texture_img,
+									 clip.x, clip.y, clip.w, clip.h,
+									 roundX,roundY,clip.w*scale,clip.h*scale);
+					}
+					drawX += letterWidth * scale + charSpace;
+					if (myx + drawX > viewRight)
+						break;
+				}
+				drawY += charHeight;
+				if (drawY + charHeight + lineHeight > this.height || myy + drawY > viewBottom)
+				{
+					break;
+				}
+			}
+			ctx.restore();
+		}
+	};
+	var dQuad = new cr.quad();
+	function rotateQuad(quad,cosa,sina) {
+		var x_temp;
+		x_temp   = (quad.tlx * cosa) - (quad.tly * sina);
+		quad.tly = (quad.tly * cosa) + (quad.tlx * sina);
+		quad.tlx = x_temp;
+		x_temp    = (quad.trx * cosa) - (quad.try_ * sina);
+		quad.try_ = (quad.try_ * cosa) + (quad.trx * sina);
+		quad.trx  = x_temp;
+		x_temp   = (quad.blx * cosa) - (quad.bly * sina);
+		quad.bly = (quad.bly * cosa) + (quad.blx * sina);
+		quad.blx = x_temp;
+		x_temp    = (quad.brx * cosa) - (quad.bry * sina);
+		quad.bry = (quad.bry * cosa) + (quad.brx * sina);
+		quad.brx  = x_temp;
+	}
+	instanceProto.drawGL = function(glw)
+	{
+		glw.setTexture(this.webGL_texture);
+		glw.setOpacity(this.opacity);
+		if (!this.text)
+			return;
+		this.rebuildText();
+		if (this.height < this.characterHeight*this.characterScale + this.lineHeight) {
+			return;
+		}
+		this.update_bbox();
+		var q = this.bquad;
+		var ox = 0;
+		var oy = 0;
+		if (this.runtime.pixel_rounding)
+		{
+			ox = ((this.x + 0.5) | 0) - this.x;
+			oy = ((this.y + 0.5) | 0) - this.y;
+		}
+		var viewLeft = this.layer.viewLeft;
+		var viewTop = this.layer.viewTop;
+		var viewRight = this.layer.viewRight;
+		var viewBottom = this.layer.viewBottom;
+		var angle      = this.angle;
+		var ha         = this.halign;
+		var va         = this.valign;
+		var scale      = this.characterScale;
+		var charHeight = this.characterHeight * scale;   // to precalculate in onCreate or on change
+		var lineHeight = this.lineHeight;
+		var charSpace  = this.characterSpacing;
+		var lines = this.lines;
+		var textHeight = this.textHeight;
+		var letterWidth;
+		var cosa,sina;
+		if (angle !== 0)
+		{
+			cosa = Math.cos(angle);
+			sina = Math.sin(angle);
+		}
+		var halign;
+		var valign = va * cr.max(0,(this.height - textHeight));
+		var offx = q.tlx + ox;
+		var offy = q.tly + oy;
+		var drawX ;
+		var drawY = valign;
+		var roundX, roundY;
+		for(var i = 0; i < lines.length; i++) {
+			var line       = lines[i].text;
+			var lineWidth  = lines[i].width;
+			halign = ha * cr.max(0,this.width - lineWidth);
+			drawX = halign;
+			drawY += lineHeight;
+			if (offy + drawY + charHeight < viewTop)
+			{
+				drawY += charHeight;
+				continue;
+			}
+			for(var j = 0; j < line.length; j++) {
+				var letter = line.charAt(j);
+				letterWidth = this.getCharacterWidth(letter);
+				var clipUV = this.clipUV[letter];
+				if (offx + drawX + letterWidth * scale + charSpace < viewLeft)
+				{
+					drawX += letterWidth * scale + charSpace;
+					continue;
+				}
+				if (drawX + letterWidth * scale > this.width + EPSILON)
+				{
+					break;
+				}
+				if (clipUV !== undefined) {
+					var clipWidth  = this.characterWidth*scale;
+					var clipHeight = this.characterHeight*scale;
+					roundX = drawX;
+					roundY = drawY;
+					if (angle === 0)
+					{
+						roundX = Math.round(roundX);
+						roundY = Math.round(roundY);
+					}
+					dQuad.tlx  = roundX;
+					dQuad.tly  = roundY;
+					dQuad.trx  = roundX + clipWidth;
+					dQuad.try_ = roundY ;
+					dQuad.blx  = roundX;
+					dQuad.bly  = roundY + clipHeight;
+					dQuad.brx  = roundX + clipWidth;
+					dQuad.bry  = roundY + clipHeight;
+					if(angle !== 0)
+					{
+						rotateQuad(dQuad,cosa,sina);
+					}
+					dQuad.offset(offx,offy);
+					glw.quadTex(
+						dQuad.tlx, dQuad.tly,
+						dQuad.trx, dQuad.try_,
+						dQuad.brx, dQuad.bry,
+						dQuad.blx, dQuad.bly,
+						clipUV
+					);
+				}
+				drawX += letterWidth * scale + charSpace;
+				if (offx + drawX > viewRight)
+					break;
+			}
+			drawY += charHeight;
+			if (drawY + charHeight + lineHeight > this.height || offy + drawY > viewBottom)
+			{
+				break;
+			}
+		}
+	};
+	function Cnds() {}
 	Cnds.prototype.CompareText = function(text_to_compare, case_sensitive)
 	{
 		if (case_sensitive)
@@ -18643,7 +14649,7 @@ cr.plugins_.Text = function(runtime)
 			return cr.equals_nocase(this.text, text_to_compare);
 	};
 	pluginProto.cnds = new Cnds();
-	function Acts() {};
+	function Acts() {}
 	Acts.prototype.SetText = function(param)
 	{
 		if (cr.is_number(param) && param < 1e9)
@@ -18668,78 +14674,45 @@ cr.plugins_.Text = function(runtime)
 			this.runtime.redraw = true;
 		}
 	};
-	Acts.prototype.SetFontFace = function (face_, style_)
+	Acts.prototype.SetScale = function(param)
 	{
-		var newstyle = "";
-		switch (style_) {
-		case 1: newstyle = "bold"; break;
-		case 2: newstyle = "italic"; break;
-		case 3: newstyle = "bold italic"; break;
+		if (param !== this.characterScale) {
+			this.characterScale = param;
+			this.text_changed = true;
+			this.runtime.redraw = true;
 		}
-		if (face_ === this.facename && newstyle === this.fontstyle)
-			return;		// no change
-		this.facename = face_;
-		this.fontstyle = newstyle;
-		this.updateFont();
 	};
-	Acts.prototype.SetFontSize = function (size_)
+	Acts.prototype.SetCharacterSpacing = function(param)
 	{
-		if (this.ptSize === size_)
-			return;
-		this.ptSize = size_;
-		this.pxHeight = Math.ceil((this.ptSize / 72.0) * 96.0) + 4;	// assume 96dpi...
-		this.updateFont();
-	};
-	Acts.prototype.SetFontColor = function (rgb)
-	{
-		var newcolor = "rgb(" + cr.GetRValue(rgb).toString() + "," + cr.GetGValue(rgb).toString() + "," + cr.GetBValue(rgb).toString() + ")";
-		if (newcolor === this.color)
-			return;
-		this.color = newcolor;
-		this.need_text_redraw = true;
-		this.runtime.redraw = true;
-	};
-	Acts.prototype.SetWebFont = function (familyname_, cssurl_)
-	{
-		if (this.runtime.isDomFree)
-		{
-			cr.logexport("[Construct 2] Text plugin: 'Set web font' not supported on this platform - the action has been ignored");
-			return;		// DC todo
+		if (param !== this.CharacterSpacing) {
+			this.characterSpacing = param;
+			this.text_changed = true;
+			this.runtime.redraw = true;
 		}
-		var self = this;
-		var refreshFunc = (function () {
-							self.runtime.redraw = true;
-							self.text_changed = true;
-						});
-		if (requestedWebFonts.hasOwnProperty(cssurl_))
-		{
-			var newfacename = "'" + familyname_ + "'";
-			if (this.facename === newfacename)
-				return;	// no change
-			this.facename = newfacename;
-			this.updateFont();
-			for (var i = 1; i < 10; i++)
-			{
-				setTimeout(refreshFunc, i * 100);
-				setTimeout(refreshFunc, i * 1000);
+	};
+	Acts.prototype.SetLineHeight = function(param)
+	{
+		if (param !== this.lineHeight) {
+			this.lineHeight = param;
+			this.text_changed = true;
+			this.runtime.redraw = true;
+		}
+	};
+	instanceProto.SetCharWidth = function(character,width) {
+		var w = parseInt(width,10);
+		if (this.characterWidthList[character] !== w) {
+			this.characterWidthList[character] = w;
+			this.text_changed = true;
+			this.runtime.redraw = true;
+		}
+	};
+	Acts.prototype.SetCharacterWidth = function(characterSet,width)
+	{
+		if (characterSet !== "") {
+			for(var c = 0; c < characterSet.length; c++) {
+				this.SetCharWidth(characterSet.charAt(c),width);
 			}
-			return;
 		}
-		var wf = document.createElement("link");
-		wf.href = cssurl_;
-		wf.rel = "stylesheet";
-		wf.type = "text/css";
-		wf.onload = refreshFunc;
-		document.getElementsByTagName('head')[0].appendChild(wf);
-		requestedWebFonts[cssurl_] = true;
-		this.facename = "'" + familyname_ + "'";
-		this.updateFont();
-		for (var i = 1; i < 10; i++)
-		{
-			setTimeout(refreshFunc, i * 100);
-			setTimeout(refreshFunc, i * 1000);
-		}
-;
 	};
 	Acts.prototype.SetEffect = function (effect)
 	{
@@ -18747,35 +14720,53 @@ cr.plugins_.Text = function(runtime)
 		cr.setGLBlend(this, effect, this.runtime.gl);
 		this.runtime.redraw = true;
 	};
+	Acts.prototype.SetHAlign = function (a)
+	{
+		this.halign = a / 2.0;
+		this.text_changed = true;
+		this.runtime.redraw = true;
+	};
+	Acts.prototype.SetVAlign = function (a)
+	{
+		this.valign = a / 2.0;
+		this.text_changed = true;
+		this.runtime.redraw = true;
+	};
 	pluginProto.acts = new Acts();
-	function Exps() {};
+	function Exps() {}
+	Exps.prototype.CharacterWidth = function(ret,character)
+	{
+		ret.set_int(this.getCharacterWidth(character));
+	};
+	Exps.prototype.CharacterHeight = function(ret)
+	{
+		ret.set_int(this.characterHeight);
+	};
+	Exps.prototype.CharacterScale = function(ret)
+	{
+		ret.set_float(this.characterScale);
+	};
+	Exps.prototype.CharacterSpacing = function(ret)
+	{
+		ret.set_int(this.characterSpacing);
+	};
+	Exps.prototype.LineHeight = function(ret)
+	{
+		ret.set_int(this.lineHeight);
+	};
 	Exps.prototype.Text = function(ret)
 	{
 		ret.set_string(this.text);
 	};
-	Exps.prototype.FaceName = function (ret)
-	{
-		ret.set_string(this.facename);
-	};
-	Exps.prototype.FaceSize = function (ret)
-	{
-		ret.set_int(this.ptSize);
-	};
 	Exps.prototype.TextWidth = function (ret)
 	{
-		var w = 0;
-		var i, len, x;
-		for (i = 0, len = this.lines.length; i < len; i++)
-		{
-			x = this.lines[i].width;
-			if (w < x)
-				w = x;
-		}
-		ret.set_int(w);
+		this.rebuildText();
+		ret.set_float(this.textWidth);
 	};
 	Exps.prototype.TextHeight = function (ret)
 	{
-		ret.set_int(this.lines.length * (this.pxHeight + this.line_height_offset) - this.line_height_offset);
+		this.rebuildText();
+		ret.set_float(this.textHeight);
 	};
 	pluginProto.exps = new Exps();
 }());
@@ -19917,290 +15908,12 @@ cr.plugins_.Touch = function(runtime)
 	};
 	pluginProto.exps = new Exps();
 }());
-;
-;
-cr.plugins_.WebStorage = function(runtime)
-{
-	this.runtime = runtime;
-};
-(function()
-{
-	var pluginProto = cr.plugins_.WebStorage.prototype;
-	pluginProto.Type = function(plugin)
-	{
-		this.plugin = plugin;
-		this.runtime = plugin.runtime;
-	};
-	var typeProto = pluginProto.Type.prototype;
-	typeProto.onCreate = function()
-	{
-	};
-	pluginProto.Instance = function(type)
-	{
-		this.type = type;
-		this.runtime = type.runtime;
-	};
-	var instanceProto = pluginProto.Instance.prototype;
-	var prefix = "";
-	var is_arcade = (typeof window["is_scirra_arcade"] !== "undefined");
-	if (is_arcade)
-		prefix = "arcade" + window["scirra_arcade_id"];
-	var logged_sessionnotsupported = false;
-	function LogSessionNotSupported()
-	{
-		if (logged_sessionnotsupported)
-			return;
-		cr.logexport("[Construct 2] Webstorage plugin: session storage is not supported on this platform. Try using local storage or global variables instead.");
-		logged_sessionnotsupported = true;
-	};
-	instanceProto.onCreate = function()
-	{
-	};
-	function Cnds() {};
-	Cnds.prototype.LocalStorageEnabled = function()
-	{
-		return true;
-	};
-	Cnds.prototype.SessionStorageEnabled = function()
-	{
-		return true;
-	};
-	Cnds.prototype.LocalStorageExists = function(key)
-	{
-		return localStorage.getItem(prefix + key) != null;
-	};
-	Cnds.prototype.SessionStorageExists = function(key)
-	{
-		if (this.runtime.isCocoonJs || !sessionStorage)
-		{
-			LogSessionNotSupported();
-			return false;
-		}
-		return sessionStorage.getItem(prefix + key) != null;
-	};
-	Cnds.prototype.OnQuotaExceeded = function ()
-	{
-		return true;
-	};
-	Cnds.prototype.CompareKeyText = function (key, text_to_compare, case_sensitive)
-	{
-		var value = localStorage.getItem(prefix + key) || "";
-		if (case_sensitive)
-			return value == text_to_compare;
-		else
-			return cr.equals_nocase(value, text_to_compare);
-	};
-	Cnds.prototype.CompareKeyNumber = function (key, cmp, x)
-	{
-		var value = localStorage.getItem(prefix + key) || "";
-		return cr.do_cmp(parseFloat(value), cmp, x);
-	};
-	pluginProto.cnds = new Cnds();
-	function Acts() {};
-	Acts.prototype.StoreLocal = function(key, data)
-	{
-		try {
-			localStorage.setItem(prefix + key, data);
-		}
-		catch (e)
-		{
-			this.runtime.trigger(cr.plugins_.WebStorage.prototype.cnds.OnQuotaExceeded, this);
-		}
-	};
-	Acts.prototype.StoreSession = function(key,data)
-	{
-		if (this.runtime.isCocoonJs || !sessionStorage)
-		{
-			LogSessionNotSupported();
-			return;
-		}
-		try {
-			sessionStorage.setItem(prefix + key, data);
-		}
-		catch (e)
-		{
-			this.runtime.trigger(cr.plugins_.WebStorage.prototype.cnds.OnQuotaExceeded, this);
-		}
-	};
-	Acts.prototype.RemoveLocal = function(key)
-	{
-		localStorage.removeItem(prefix + key);
-	};
-	Acts.prototype.RemoveSession = function(key)
-	{
-		if (this.runtime.isCocoonJs || !sessionStorage)
-		{
-			LogSessionNotSupported();
-			return;
-		}
-		sessionStorage.removeItem(prefix + key);
-	};
-	Acts.prototype.ClearLocal = function()
-	{
-		if (!is_arcade)
-			localStorage.clear();
-	};
-	Acts.prototype.ClearSession = function()
-	{
-		if (this.runtime.isCocoonJs || !sessionStorage)
-		{
-			LogSessionNotSupported();
-			return;
-		}
-		if (!is_arcade)
-			sessionStorage.clear();
-	};
-	Acts.prototype.JSONLoad = function (json_, mode_)
-	{
-		var d;
-		try {
-			d = JSON.parse(json_);
-		}
-		catch(e) { return; }
-		if (!d["c2dictionary"])			// presumably not a c2dictionary object
-			return;
-		var o = d["data"];
-		if (mode_ === 0 && !is_arcade)	// 'set' mode: must clear webstorage first
-			localStorage.clear();
-		var p;
-		for (p in o)
-		{
-			if (o.hasOwnProperty(p))
-			{
-				try {
-					localStorage.setItem(prefix + p, o[p]);
-				}
-				catch (e)
-				{
-					this.runtime.trigger(cr.plugins_.WebStorage.prototype.cnds.OnQuotaExceeded, this);
-					return;
-				}
-			}
-		}
-	};
-	pluginProto.acts = new Acts();
-	function Exps() {};
-	Exps.prototype.LocalValue = function(ret,key)
-	{
-		ret.set_string(localStorage.getItem(prefix + key) || "");
-	};
-	Exps.prototype.SessionValue = function(ret,key)
-	{
-		if (this.runtime.isCocoonJs || !sessionStorage)
-		{
-			LogSessionNotSupported();
-			ret.set_string("");
-			return;
-		}
-		ret.set_string(sessionStorage.getItem(prefix + key) || "");
-	};
-	Exps.prototype.LocalCount = function(ret)
-	{
-		ret.set_int(is_arcade ? 0 : localStorage.length);
-	};
-	Exps.prototype.SessionCount = function(ret)
-	{
-		if (this.runtime.isCocoonJs || !sessionStorage)
-		{
-			LogSessionNotSupported();
-			ret.set_int(0);
-			return;
-		}
-		ret.set_int(is_arcade ? 0 : sessionStorage.length);
-	};
-	Exps.prototype.LocalAt = function(ret,n)
-	{
-		if (is_arcade)
-			ret.set_string("");
-		else
-			ret.set_string(localStorage.getItem(localStorage.key(n)) || "");
-	};
-	Exps.prototype.SessionAt = function(ret,n)
-	{
-		if (this.runtime.isCocoonJs || !sessionStorage)
-		{
-			LogSessionNotSupported();
-			ret.set_string("");
-			return;
-		}
-		if (is_arcade)
-			ret.set_string("");
-		else
-			ret.set_string(sessionStorage.getItem(sessionStorage.key(n)) || "");
-	};
-	Exps.prototype.LocalKeyAt = function(ret,n)
-	{
-		if (is_arcade)
-			ret.set_string("");
-		else
-			ret.set_string(localStorage.key(n) || "");
-	};
-	Exps.prototype.SessionKeyAt = function(ret,n)
-	{
-		if (this.runtime.isCocoonJs || !sessionStorage)
-		{
-			LogSessionNotSupported();
-			ret.set_string("");
-			return;
-		}
-		if (is_arcade)
-			ret.set_string("");
-		else
-			ret.set_string(sessionStorage.key(n) || "");
-	};
-	Exps.prototype.AsJSON = function (ret)
-	{
-		var o = {}, i, len, k;
-		for (i = 0, len = localStorage.length; i < len; i++)
-		{
-			k = localStorage.key(i);
-			if (is_arcade)
-			{
-				if (k.substr(0, prefix.length) === prefix)
-				{
-					o[k.substr(prefix.length)] = localStorage.getItem(k);
-				}
-			}
-			else
-				o[k] = localStorage.getItem(k);
-		}
-		ret.set_string(JSON.stringify({
-			"c2dictionary": true,
-			"data": o
-		}));
-	};
-	pluginProto.exps = new Exps();
-}());
 cr.getProjectModel = function() { return [
 	null,
 	null,
 	[
 	[
-		cr.plugins_.Arr,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false
-	]
-,	[
 		cr.plugins_.Touch,
-		true,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false
-	]
-,	[
-		cr.plugins_.WebStorage,
 		true,
 		false,
 		false,
@@ -20224,35 +15937,11 @@ cr.getProjectModel = function() { return [
 		false
 	]
 ,	[
-		cr.plugins_.Text,
+		cr.plugins_.Spritefont2,
 		false,
 		true,
 		true,
 		true,
-		true,
-		true,
-		true,
-		true,
-		false
-	]
-,	[
-		cr.plugins_.Audio,
-		true,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false
-	]
-,	[
-		cr.plugins_.Particles,
-		false,
-		true,
-		true,
-		false,
 		true,
 		true,
 		true,
@@ -20311,70 +16000,108 @@ cr.getProjectModel = function() { return [
 	]
 ,	[
 		"t2",
-		cr.plugins_.Text,
+		cr.plugins_.Sprite,
 		false,
 		[],
 		0,
 		0,
 		null,
-		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			2318730649031847,
+			[
+				["images/lineafine-sheet0.png", 155, 0, 0, 250, 250, 1, 0.5, 0.5,[],[],1]
+			]
+			]
+		],
 		[
 		],
 		false,
 		false,
-		7273715016724067,
+		4386851859918949,
 		[],
 		null
 	]
 ,	[
 		"t3",
-		cr.plugins_.Audio,
+		cr.plugins_.Spritefont2,
 		false,
 		[],
 		0,
 		0,
-		null,
+		["images/spritefont.png", 2142, 0],
 		null,
 		[
 		],
 		false,
 		false,
-		7515271022428067,
+		2608682812886803,
 		[],
 		null
-		,[0,0,1,1,600,600,10000,1,5000,1]
 	]
 ,	[
 		"t4",
-		cr.plugins_.Arr,
+		cr.plugins_.Sprite,
 		false,
 		[],
 		0,
 		0,
 		null,
-		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			113184707315701,
+			[
+				["images/backgroundblue-sheet0.png", 155, 0, 0, 250, 250, 1, 0.5, 0.5,[],[],1]
+			]
+			]
+		],
 		[
 		],
-		true,
 		false,
-		3455704361485696,
+		false,
+		3747144020554298,
 		[],
 		null
 	]
 ,	[
 		"t5",
-		cr.plugins_.Particles,
+		cr.plugins_.Sprite,
 		false,
 		[],
 		0,
 		0,
-		["images/particles.png", 30014, 0],
 		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			3258788205075099,
+			[
+				["images/sprite-sheet0.png", 33224, 0, 0, 1185, 122, 1, 0.500421941280365, 0.5,[],[-0.4843881726264954,-0.3442623019218445,-0.0008438825607299805,-0.2049180269241333,0.4683544039726257,-0.1967213153839111,0.4978902935981751,0,0.4928269982337952,0.4344262480735779,-0.0008438825607299805,0.4754098653793335,-0.4869198203086853,0.368852436542511,-0.500421941280365,0],0]
+			]
+			]
+		],
 		[
 		],
 		false,
 		false,
-		3926221316796274,
+		9698126504975755,
 		[],
 		null
 	]
@@ -20394,9 +16121,9 @@ cr.getProjectModel = function() { return [
 			1,
 			0,
 			false,
-			5331495466663888,
+			9377240037492421,
 			[
-				["images/lineafine-sheet0.png", 155, 0, 0, 250, 250, 1, 0.5, 0.5,[],[],1]
+				["images/sprite2-sheet0.png", 11487, 0, 0, 342, 153, 1, 0.5, 0.5032680034637451,[],[-0.4853801131248474,-0.4705882668495178,0,-0.2745098471641541,0.4005848169326782,-0.2810457944869995,0.4473684430122376,-0.006535977125167847,0.3888888955116272,0.2483659982681274,-0.3888888955116272,0.2483659982681274,-0.4619883000850678,-0.006535977125167847],0]
 			]
 			]
 		],
@@ -20404,138 +16131,92 @@ cr.getProjectModel = function() { return [
 		],
 		false,
 		false,
-		5728021997121674,
+		7404743427855517,
 		[],
 		null
 	]
 ,	[
 		"t7",
-		cr.plugins_.Text,
+		cr.plugins_.Sprite,
 		false,
 		[],
 		0,
 		0,
 		null,
-		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			3181212752210204,
+			[
+				["images/sprite3-sheet0.png", 29533, 0, 0, 800, 155, 1, 0.5, 0.5032258033752441,[],[-0.487500011920929,-0.4387096762657166,0,-0.2645161151885986,0.4387500286102295,-0.1870967745780945,0.4375,0.1741935610771179,0,0.2774193286895752,-0.456250011920929,0.2709677219390869,-0.4862500131130219,-0.006451606750488281],0]
+			]
+			]
+		],
 		[
 		],
 		false,
 		false,
-		4890141121539439,
+		9281582121493439,
 		[],
 		null
 	]
 ,	[
 		"t8",
-		cr.plugins_.Text,
+		cr.plugins_.Spritefont2,
 		false,
 		[],
 		0,
 		0,
-		null,
+		["images/spritefont.png", 2142, 0],
 		null,
 		[
 		],
 		false,
 		false,
-		5342143731840757,
+		1956377118202318,
 		[],
 		null
 	]
 ,	[
 		"t9",
-		cr.plugins_.WebStorage,
+		cr.plugins_.Sprite,
 		false,
 		[],
 		0,
 		0,
 		null,
-		null,
+		[
+			[
+			"Default",
+			5,
+			false,
+			1,
+			0,
+			false,
+			8217340617667759,
+			[
+				["images/sprite4-sheet0.png", 155, 0, 0, 250, 250, 1, 0.5, 0.5,[],[],1]
+			]
+			]
+		],
 		[
 		],
 		false,
 		false,
-		7844439708617926,
+		9654853047335482,
 		[],
 		null
-		,[]
 	]
 	],
 	[
 	],
 	[
 	[
-		"Menu",
-		1440,
-		2560,
-		false,
-		"MenuES",
-		2202988641730135,
-		[
-		[
-			"Layer 0",
-			0,
-			6013323758168078,
-			true,
-			[255, 255, 255],
-			false,
-			1,
-			1,
-			1,
-			false,
-			1,
-			0,
-			0,
-			[
-			[
-				[629, 1064, 0, 241, 137, 0, 0, 1, 0, 0, 0, 0, []],
-				7,
-				7,
-				[
-				],
-				[
-				],
-				[
-					"Play",
-					0,
-					"72pt Arial",
-					"rgb(0,0,0)",
-					0,
-					0,
-					0,
-					0,
-					0
-				]
-			]
-,			[
-				[310, 1652, 0, 842, 203, 0, 0, 1, 0, 0, 0, 0, []],
-				8,
-				8,
-				[
-				],
-				[
-				],
-				[
-					"Text",
-					0,
-					"72pt Arial",
-					"rgb(0,0,0)",
-					0,
-					0,
-					0,
-					0,
-					0
-				]
-			]
-			],
-			[			]
-		]
-		],
-		[
-		],
-		[]
-	]
-,	[
 		"Normal",
 		1440,
 		2560,
@@ -20558,6 +16239,36 @@ cr.getProjectModel = function() { return [
 			0,
 			0,
 			[
+			[
+				[727, 2654, 0, 1679, 49, 0, 0, 1, 0.5, 0.5, 0, 0, []],
+				2,
+				5,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[725, 1237, 0, 1534, 2744, 0, 0, 1, 0.5, 0.5, 0, 0, []],
+				4,
+				2,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
 			],
 			[			]
 		]
@@ -20577,74 +16288,9 @@ cr.getProjectModel = function() { return [
 			0,
 			[
 			[
-				[-290.8039855957031, 607.900634765625, 0, 206, 213, 0, 0, 1, 0.5017064809799194, 0.5017182230949402, 0, 0, []],
+				[-917, 1129, 0, 327, 337, 0, 0, 1, 0.5017064809799194, 0.5017182230949402, 0, 0, []],
 				0,
 				0,
-				[
-				],
-				[
-				],
-				[
-					0,
-					"Default",
-					0,
-					1
-				]
-			]
-,			[
-				[793, 21, 0, 636, 156, 0, 0, 1, 0, 0, 0, 0, []],
-				2,
-				2,
-				[
-				],
-				[
-				],
-				[
-					"Text",
-					0,
-					"72pt Arial",
-					"rgb(0,0,0)",
-					0,
-					0,
-					0,
-					0,
-					0
-				]
-			]
-,			[
-				[-468, 857, 0, 71, 71, 0, 0, 1, 0, 0.5, 0, 0, []],
-				5,
-				5,
-				[
-				],
-				[
-				],
-				[
-					100,
-					360,
-					1,
-					200,
-					32,
-					100,
-					0,
-					0,
-					0,
-					0,
-					0,
-					0,
-					-150,
-					0,
-					0,
-					800,
-					0,
-					0,
-					1
-				]
-			]
-,			[
-				[707, 2713, 0, 1657, 46, 0, 0, 1, 0.5, 0.5, 0, 0, []],
-				6,
-				6,
 				[
 				],
 				[
@@ -20659,22 +16305,181 @@ cr.getProjectModel = function() { return [
 			],
 			[			]
 		]
+,		[
+			"Texts",
+			2,
+			3370268339640416,
+			true,
+			[255, 255, 255],
+			true,
+			1,
+			1,
+			1,
+			false,
+			1,
+			0,
+			0,
+			[
+			[
+				[3, 38, 0, 1434, 220, 0, 0, 1, 0, 0, 0, 0, []],
+				3,
+				6,
+				[
+				],
+				[
+				],
+				[
+					64,
+					64,
+					"0123456789",
+					"30",
+					3,
+					0,
+					1,
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+			],
+			[			]
+		]
 		],
 		[
+		],
+		[]
+	]
+,	[
+		"Menu",
+		1440,
+		2560,
+		false,
+		"MenuES",
+		4205871284065249,
+		[
+		[
+			"Layer 0",
+			0,
+			6550380154847415,
+			true,
+			[255, 255, 255],
+			false,
+			1,
+			1,
+			1,
+			false,
+			1,
+			0,
+			0,
 			[
-				null,
-				4,
-				4,
+			[
+				[729.5, 1228, 0, -1581, 2724, 0, 0, 1, 0.5, 0.5, 0, 0, []],
+				9,
+				9,
 				[
 				],
 				[
 				],
 				[
-					10,
-					1,
+					0,
+					"Default",
+					0,
 					1
 				]
 			]
+			],
+			[			]
+		]
+,		[
+			"Layer 1",
+			1,
+			1370978884662396,
+			true,
+			[255, 255, 255],
+			true,
+			1,
+			1,
+			1,
+			false,
+			1,
+			0,
+			0,
+			[
+			[
+				[748, 952, 0, 620, 301, 0, 0, 1, 0.5, 0.5032680034637451, 0, 0, []],
+				6,
+				8,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[737, 1608, 0, 922, 208, 0, 0, 1, 0.5, 0.5032258033752441, 0, 0, []],
+				7,
+				3,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[726, 316, 0, 1346, 160, 0, 0, 1, 0.500421941280365, 0.5, 0, 0, []],
+				5,
+				7,
+				[
+				],
+				[
+				],
+				[
+					0,
+					"Default",
+					0,
+					1
+				]
+			]
+,			[
+				[6, 1824, 0, 1431, 231, 0, 0, 1, 0, 0, 0, 0, []],
+				8,
+				4,
+				[
+				],
+				[
+				],
+				[
+					64,
+					64,
+					"0123456789",
+					"123",
+					3,
+					0,
+					1,
+					0,
+					0,
+					0,
+					0,
+					0
+				]
+			]
+			],
+			[			]
+		]
+		],
+		[
 		],
 		[]
 	]
@@ -20688,14 +16493,7 @@ cr.getProjectModel = function() { return [
 			"highscore",
 			0,
 			0,
-false,false,2321534133518282,false
-		]
-,		[
-			1,
-			"varscale",
-			0,
-			1,
-false,false,9445217091465772,false
+false,false,2610208516698017,false
 		]
 ,		[
 			1,
@@ -20713,7 +16511,7 @@ false,false,2680801789163879,false
 		]
 ,		[
 			1,
-			"vartime",
+			"veloc",
 			0,
 			8,
 false,false,3448669525086595,false
@@ -20831,16 +16629,16 @@ false,false,3448669525086595,false
 					0,
 					[
 						23,
-						"vartime"
+						"veloc"
 					]
 				]
 				]
 			]
 ,			[
-				2,
-				cr.plugins_.Text.prototype.acts.SetText,
+				3,
+				cr.plugins_.Spritefont2.prototype.acts.SetText,
 				null,
-				5479702463174023,
+				3050037282615223,
 				false
 				,[
 				[
@@ -20848,22 +16646,6 @@ false,false,3448669525086595,false
 					[
 						23,
 						"score"
-					]
-				]
-				]
-			]
-,			[
-				0,
-				cr.plugins_.Sprite.prototype.acts.SetScale,
-				null,
-				283511599118823,
-				false
-				,[
-				[
-					0,
-					[
-						23,
-						"varscale"
 					]
 				]
 				]
@@ -20919,33 +16701,6 @@ false,false,3448669525086595,false
 					[
 						0,
 						1
-					]
-				]
-				]
-			]
-,			[
-				0,
-				cr.plugins_.Sprite.prototype.acts.Spawn,
-				null,
-				892041400902419,
-				false
-				,[
-				[
-					4,
-					5
-				]
-,				[
-					5,
-					[
-						0,
-						0
-					]
-				]
-,				[
-					7,
-					[
-						0,
-						0
 					]
 				]
 				]
@@ -21009,7 +16764,7 @@ false,false,3448669525086595,false
 				,[
 				[
 					11,
-					"vartime"
+					"veloc"
 				]
 ,				[
 					7,
@@ -21036,6 +16791,186 @@ false,false,3448669525086595,false
 					[
 						1,
 						0.8
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			2836691849229878,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.EveryTick,
+				null,
+				0,
+				false,
+				false,
+				false,
+				9082672572555953,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.cnds.CompareVar,
+				null,
+				0,
+				false,
+				false,
+				false,
+				6798701547905469,
+				false
+				,[
+				[
+					11,
+					"score"
+				]
+,				[
+					8,
+					0
+				]
+,				[
+					7,
+					[
+						0,
+						10
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				7869563268363528,
+				false
+				,[
+				[
+					11,
+					"veloc"
+				]
+,				[
+					7,
+					[
+						0,
+						12
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				3360110663044474,
+				false
+				,[
+				[
+					11,
+					"vartimesec"
+				]
+,				[
+					7,
+					[
+						1,
+						0.6
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			98025368661358,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.EveryTick,
+				null,
+				0,
+				false,
+				false,
+				false,
+				6479650893516406,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.cnds.CompareVar,
+				null,
+				0,
+				false,
+				false,
+				false,
+				8007970305699706,
+				false
+				,[
+				[
+					11,
+					"score"
+				]
+,				[
+					8,
+					0
+				]
+,				[
+					7,
+					[
+						0,
+						15
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				1271873581704848,
+				false
+				,[
+				[
+					11,
+					"veloc"
+				]
+,				[
+					7,
+					[
+						0,
+						14
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				9752643412209938,
+				false
+				,[
+				[
+					11,
+					"vartimesec"
+				]
+,				[
+					7,
+					[
+						1,
+						0.55
 					]
 				]
 				]
@@ -21099,7 +17034,7 @@ false,false,3448669525086595,false
 				,[
 				[
 					11,
-					"vartime"
+					"veloc"
 				]
 ,				[
 					7,
@@ -21126,6 +17061,96 @@ false,false,3448669525086595,false
 					[
 						1,
 						0.5
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			7725897451003154,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.EveryTick,
+				null,
+				0,
+				false,
+				false,
+				false,
+				7695144213140402,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.cnds.CompareVar,
+				null,
+				0,
+				false,
+				false,
+				false,
+				9949549193490722,
+				false
+				,[
+				[
+					11,
+					"score"
+				]
+,				[
+					8,
+					0
+				]
+,				[
+					7,
+					[
+						0,
+						30
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				3580746042010982,
+				false
+				,[
+				[
+					11,
+					"veloc"
+				]
+,				[
+					7,
+					[
+						0,
+						20
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				6968212069650342,
+				false
+				,[
+				[
+					11,
+					"vartimesec"
+				]
+,				[
+					7,
+					[
+						1,
+						0.4
 					]
 				]
 				]
@@ -21189,7 +17214,7 @@ false,false,3448669525086595,false
 				,[
 				[
 					11,
-					"vartime"
+					"veloc"
 				]
 ,				[
 					7,
@@ -21227,104 +17252,7 @@ false,false,3448669525086595,false
 			null,
 			false,
 			null,
-			5967961806779916,
-			[
-			[
-				-1,
-				cr.system_object.prototype.cnds.OnLayoutStart,
-				null,
-				1,
-				false,
-				false,
-				false,
-				2214965093522416,
-				false
-			]
-			],
-			[
-			[
-				3,
-				cr.plugins_.Audio.prototype.acts.Play,
-				null,
-				6835235253943066,
-				false
-				,[
-				[
-					2,
-					["robo",true]
-				]
-,				[
-					3,
-					0
-				]
-,				[
-					0,
-					[
-						0,
-						0
-					]
-				]
-,				[
-					1,
-					[
-						2,
-						""
-					]
-				]
-				]
-			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			5003182215702965,
-			[
-			[
-				0,
-				cr.plugins_.Sprite.prototype.cnds.OnCollision,
-				null,
-				0,
-				false,
-				false,
-				true,
-				7715810286720462,
-				false
-				,[
-				[
-					4,
-					6
-				]
-				]
-			]
-			],
-			[
-			[
-				-1,
-				cr.system_object.prototype.acts.GoToLayoutByName,
-				null,
-				6984836324213873,
-				false
-				,[
-				[
-					1,
-					[
-						2,
-						"Menu"
-					]
-				]
-				]
-			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			9313698452279402,
+			1865018060530155,
 			[
 			[
 				-1,
@@ -21334,7 +17262,7 @@ false,false,3448669525086595,false
 				false,
 				false,
 				false,
-				7824646852059737,
+				6073291707780743,
 				false
 			]
 ,			[
@@ -21345,7 +17273,7 @@ false,false,3448669525086595,false
 				false,
 				false,
 				false,
-				3880358915257513,
+				7105758137746841,
 				false
 				,[
 				[
@@ -21354,13 +17282,13 @@ false,false,3448669525086595,false
 				]
 ,				[
 					8,
-					4
+					0
 				]
 ,				[
 					7,
 					[
-						23,
-						"highscore"
+						0,
+						80
 					]
 				]
 				]
@@ -21371,7 +17299,187 @@ false,false,3448669525086595,false
 				-1,
 				cr.system_object.prototype.acts.SetVar,
 				null,
-				1877011076542073,
+				386872606837813,
+				false
+				,[
+				[
+					11,
+					"veloc"
+				]
+,				[
+					7,
+					[
+						0,
+						30
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				4670012472400342,
+				false
+				,[
+				[
+					11,
+					"vartimesec"
+				]
+,				[
+					7,
+					[
+						1,
+						0.2
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			9280271388857391,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.EveryTick,
+				null,
+				0,
+				false,
+				false,
+				false,
+				353345990452175,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.cnds.CompareVar,
+				null,
+				0,
+				false,
+				false,
+				false,
+				4845183570526451,
+				false
+				,[
+				[
+					11,
+					"score"
+				]
+,				[
+					8,
+					0
+				]
+,				[
+					7,
+					[
+						0,
+						150
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				5989362152809552,
+				false
+				,[
+				[
+					11,
+					"veloc"
+				]
+,				[
+					7,
+					[
+						0,
+						35
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				8356049876855129,
+				false
+				,[
+				[
+					11,
+					"vartimesec"
+				]
+,				[
+					7,
+					[
+						1,
+						0.1
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			2958835900121815,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.EveryTick,
+				null,
+				0,
+				false,
+				false,
+				false,
+				2456949356684075,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.cnds.CompareVar,
+				null,
+				0,
+				false,
+				false,
+				false,
+				20949165994071,
+				false
+				,[
+				[
+					11,
+					"highscore"
+				]
+,				[
+					8,
+					2
+				]
+,				[
+					7,
+					[
+						23,
+						"score"
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				8504288001169711,
 				false
 				,[
 				[
@@ -21389,6 +17497,50 @@ false,false,3448669525086595,false
 			]
 			]
 		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			2028093255057913,
+			[
+			[
+				0,
+				cr.plugins_.Sprite.prototype.cnds.OnCollision,
+				null,
+				0,
+				false,
+				false,
+				true,
+				1731556092913773,
+				false
+				,[
+				[
+					4,
+					2
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.GoToLayoutByName,
+				null,
+				5803757292623301,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"Menu"
+					]
+				]
+				]
+			]
+			]
+		]
 		]
 	]
 ,	[
@@ -21399,7 +17551,54 @@ false,false,3448669525086595,false
 			null,
 			false,
 			null,
-			4608253531155968,
+			1468427713588957,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.Every,
+				null,
+				0,
+				false,
+				false,
+				false,
+				2821162868653217,
+				false
+				,[
+				[
+					0,
+					[
+						1,
+						0.1
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.SaveState,
+				null,
+				9374464551234122,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"highscore"
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			6315873590639115,
 			[
 			[
 				-1,
@@ -21409,7 +17608,7 @@ false,false,3448669525086595,false
 				false,
 				false,
 				false,
-				762981596036602,
+				9090114548625859,
 				false
 			]
 			],
@@ -21418,7 +17617,7 @@ false,false,3448669525086595,false
 				-1,
 				cr.system_object.prototype.acts.SetVar,
 				null,
-				7145432095297634,
+				8201382628209964,
 				false
 				,[
 				[
@@ -21438,27 +17637,7 @@ false,false,3448669525086595,false
 				-1,
 				cr.system_object.prototype.acts.SetVar,
 				null,
-				6486724617552496,
-				false
-				,[
-				[
-					11,
-					"vartime"
-				]
-,				[
-					7,
-					[
-						0,
-						8
-					]
-				]
-				]
-			]
-,			[
-				-1,
-				cr.system_object.prototype.acts.SetVar,
-				null,
-				8550528013534049,
+				6005171861355446,
 				false
 				,[
 				[
@@ -21474,65 +17653,31 @@ false,false,3448669525086595,false
 				]
 				]
 			]
-			]
-		]
-,		[
-			0,
-			null,
-			false,
-			null,
-			8695287810053466,
-			[
-			[
+,			[
 				-1,
-				cr.system_object.prototype.cnds.EveryTick,
+				cr.system_object.prototype.acts.SetVar,
 				null,
-				0,
-				false,
-				false,
-				false,
-				2411155881060862,
-				false
-			]
-			],
-			[
-			[
-				8,
-				cr.plugins_.Text.prototype.acts.SetText,
-				null,
-				9482454100500795,
+				5239473235580225,
 				false
 				,[
 				[
+					11,
+					"veloc"
+				]
+,				[
 					7,
 					[
-						10,
-						[
-							2,
-							"Highscore: "
-						]
-						,[
-							20,
-							9,
-							cr.plugins_.WebStorage.prototype.exps.LocalValue,
-							true,
-							null
-							,[
-[
-								2,
-								"highscore"
-							]
-							]
-						]
+						0,
+						8
 					]
 				]
 				]
 			]
 ,			[
-				9,
-				cr.plugins_.WebStorage.prototype.acts.StoreLocal,
+				-1,
+				cr.system_object.prototype.acts.LoadState,
 				null,
-				2652935435305346,
+				5741701069306939,
 				false
 				,[
 				[
@@ -21542,7 +17687,38 @@ false,false,3448669525086595,false
 						"highscore"
 					]
 				]
-,				[
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			6523309555540025,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.EveryTick,
+				null,
+				0,
+				false,
+				false,
+				false,
+				2975197599527248,
+				false
+			]
+			],
+			[
+			[
+				8,
+				cr.plugins_.Spritefont2.prototype.acts.SetText,
+				null,
+				8670791586975635,
+				false
+				,[
+				[
 					7,
 					[
 						23,
@@ -21558,7 +17734,7 @@ false,false,3448669525086595,false
 			null,
 			false,
 			null,
-			8728845872018833,
+			2874956798813317,
 			[
 			[
 				1,
@@ -21568,12 +17744,12 @@ false,false,3448669525086595,false
 				false,
 				false,
 				false,
-				3060401121156512,
+				8063920806566123,
 				false
 				,[
 				[
 					4,
-					7
+					6
 				]
 				]
 			]
@@ -21583,7 +17759,7 @@ false,false,3448669525086595,false
 				-1,
 				cr.system_object.prototype.acts.GoToLayoutByName,
 				null,
-				7165486594777746,
+				9020775366996824,
 				false
 				,[
 				[
@@ -21603,12 +17779,12 @@ false,false,3448669525086595,false
 	[
 	],
 	"media/",
-	false,
+	true,
 	1440,
 	2560,
-	4,
+	5,
 	true,
-	true,
+	false,
 	true,
 	"1.0.0.0",
 	true,
