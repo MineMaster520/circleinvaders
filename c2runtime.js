@@ -18266,6 +18266,26 @@ false,false,3448669525086595,false
 				]
 				]
 			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				5719298746560552,
+				false
+				,[
+				[
+					11,
+					"mort"
+				]
+,				[
+					7,
+					[
+						0,
+						0
+					]
+				]
+				]
+			]
 			]
 		]
 		]
@@ -18274,51 +18294,11 @@ false,false,3448669525086595,false
 		"MenuES",
 		[
 		[
+			1,
+			"mort",
 			0,
-			null,
-			false,
-			null,
-			1468427713588957,
-			[
-			[
-				-1,
-				cr.system_object.prototype.cnds.Every,
-				null,
-				0,
-				false,
-				false,
-				false,
-				2821162868653217,
-				false
-				,[
-				[
-					0,
-					[
-						1,
-						0.1
-					]
-				]
-				]
-			]
-			],
-			[
-			[
-				-1,
-				cr.system_object.prototype.acts.SaveState,
-				null,
-				9374464551234122,
-				false
-				,[
-				[
-					1,
-					[
-						2,
-						"highscore"
-					]
-				]
-				]
-			]
-			]
+			1,
+false,false,9920809078077715,false
 		]
 ,		[
 			0,
@@ -18396,22 +18376,6 @@ false,false,3448669525086595,false
 					[
 						0,
 						8
-					]
-				]
-				]
-			]
-,			[
-				-1,
-				cr.system_object.prototype.acts.LoadState,
-				null,
-				5741701069306939,
-				false
-				,[
-				[
-					1,
-					[
-						2,
-						"highscore"
 					]
 				]
 				]
@@ -18494,6 +18458,158 @@ false,false,3448669525086595,false
 					[
 						2,
 						"Normal"
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			3804876999396276,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.OnLayoutStart,
+				null,
+				1,
+				false,
+				false,
+				false,
+				320007379618342,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.cnds.CompareVar,
+				null,
+				0,
+				false,
+				false,
+				false,
+				6500465039064041,
+				false
+				,[
+				[
+					11,
+					"mort"
+				]
+,				[
+					8,
+					0
+				]
+,				[
+					7,
+					[
+						0,
+						0
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.SaveState,
+				null,
+				9866927612230769,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"highscore"
+					]
+				]
+				]
+			]
+,			[
+				-1,
+				cr.system_object.prototype.acts.SetVar,
+				null,
+				6753591038214134,
+				false
+				,[
+				[
+					11,
+					"mort"
+				]
+,				[
+					7,
+					[
+						0,
+						1
+					]
+				]
+				]
+			]
+			]
+		]
+,		[
+			0,
+			null,
+			false,
+			null,
+			1365528419596038,
+			[
+			[
+				-1,
+				cr.system_object.prototype.cnds.OnLayoutStart,
+				null,
+				1,
+				false,
+				false,
+				false,
+				6534061698263042,
+				false
+			]
+,			[
+				-1,
+				cr.system_object.prototype.cnds.CompareVar,
+				null,
+				0,
+				false,
+				false,
+				false,
+				592964116905539,
+				false
+				,[
+				[
+					11,
+					"mort"
+				]
+,				[
+					8,
+					0
+				]
+,				[
+					7,
+					[
+						0,
+						1
+					]
+				]
+				]
+			]
+			],
+			[
+			[
+				-1,
+				cr.system_object.prototype.acts.LoadState,
+				null,
+				1941490874374053,
+				false
+				,[
+				[
+					1,
+					[
+						2,
+						"highscore"
 					]
 				]
 				]
